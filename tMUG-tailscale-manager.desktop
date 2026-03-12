@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=tMUG
 Comment=tMUG - Tailscale Multi-platform User GUI
-Exec=/usr/local/bin/tailscale-manager
+Exec=/usr/local/bin/tMUG-tailscale-manager
 Icon=tailscale
 Terminal=false
 Type=Application

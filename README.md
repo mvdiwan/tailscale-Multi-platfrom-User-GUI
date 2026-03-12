@@ -32,7 +32,7 @@ chmod +x install.sh
 ./install.sh
 
 # Or run directly
-./tailscale-manager
+./tMUG-tailscale-manager
 ```
 
 ### Python + PyQt5 (Cross-platform)
@@ -61,8 +61,8 @@ chmod +x install.sh
 Or manually:
 
 ```bash
-sudo install -m 755 tailscale-manager /usr/local/bin/tailscale-manager
-sudo install -m 644 tailscale-manager.desktop /usr/share/applications/tailscale-manager.desktop
+sudo install -m 755 tMUG-tailscale-manager /usr/local/bin/tMUG-tailscale-manager
+sudo install -m 644 tMUG-tailscale-manager.desktop /usr/share/applications/tMUG-tailscale-manager.desktop
 sudo install -m 644 tailscale.svg /usr/share/pixmaps/tailscale.svg
 sudo update-desktop-database /usr/share/applications/
 ```
@@ -79,7 +79,7 @@ chmod +x uninstall.sh
 Launch "tMUG" from your application menu, or run:
 
 ```bash
-tailscale-manager
+tMUG-tailscale-manager
 ```
 
 ### First-time setup

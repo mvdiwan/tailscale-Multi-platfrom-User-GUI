@@ -12,7 +12,7 @@ setup(
     ],
     entry_points={
         "gui_scripts": [
-            "tmug=tailscale_manager:main",
+            "tMUG-tailscale-manager=tailscale_manager:main",
         ],
     },
     python_requires=">=3.7",
