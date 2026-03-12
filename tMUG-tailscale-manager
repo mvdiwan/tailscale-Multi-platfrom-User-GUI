@@ -13,6 +13,7 @@ APP_LICENSE="Apache-2.0"
 ICON="/usr/share/pixmaps/tailscale.svg"
 LOCKFILE="/tmp/.tMUG-tailscale-manager.lock"
 TRAY_PIPE="/tmp/.tailscale-manager-tray-$$"
+RESPONSE_PIPE="/tmp/.tailscale-manager-resp-$$"
 TRAY_PID=""
 
 # --- Single instance check ---
@@ -39,7 +40,7 @@ cleanup() {
     fi
     exec 3>&- 2>/dev/null
     rm -f "$TRAY_PIPE"
-    rm -f "/tmp/.tailscale-manager-resp-$$"
+    rm -f "$RESPONSE_PIPE"
     # Release lock
     exec 9>&-
     rm -f "$LOCKFILE"
@@ -127,8 +128,9 @@ capture_auth_url() {
     local cmd="$1"
     local tmpfile
     tmpfile=$(mktemp /tmp/tmug-auth-XXXXXX)
+    chmod 600 "$tmpfile"
 
-    sudo tailscale $cmd > "$tmpfile" 2>&1 &
+    sudo tailscale "$cmd" > "$tmpfile" 2>&1 &
     local bg_pid=$!
 
     # Wait up to 15 seconds for a URL to appear in the output
@@ -149,12 +151,13 @@ capture_auth_url() {
     output=$(cat "$tmpfile" 2>/dev/null)
     rm -f "$tmpfile"
 
+    # Clean up the background tailscale process
+    kill "$bg_pid" 2>/dev/null
+    wait "$bg_pid" 2>/dev/null
+
     # Return results via global vars (bash doesn't have tuples)
     _AUTH_URL="$url"
     _AUTH_OUTPUT="$output"
-    _AUTH_PID="$bg_pid"
-    _AUTH_RUNNING=0
-    kill -0 "$bg_pid" 2>/dev/null && _AUTH_RUNNING=1
 }
 
 do_connect() {
@@ -242,10 +245,11 @@ do_exit_node_menu() {
 }
 
 do_settings() {
-    local current_dns current_routes current_ssh
-    current_dns=$(tailscale debug prefs 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('CorpDNS', True))" 2>/dev/null)
-    current_routes=$(tailscale debug prefs 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('RouteAll', False))" 2>/dev/null)
-    current_ssh=$(tailscale debug prefs 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('RunSSH', False))" 2>/dev/null)
+    local prefs_json current_dns current_routes current_ssh
+    prefs_json=$(tailscale debug prefs 2>/dev/null)
+    current_dns=$(echo "$prefs_json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('CorpDNS', True))" 2>/dev/null)
+    current_routes=$(echo "$prefs_json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('RouteAll', False))" 2>/dev/null)
+    current_ssh=$(echo "$prefs_json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('RunSSH', False))" 2>/dev/null)
 
     local dns_flag="" routes_flag="" ssh_flag=""
     [ "$current_dns" = "True" ] && dns_flag="TRUE" || dns_flag="FALSE"
@@ -268,13 +272,13 @@ do_settings() {
         set_ssh=$(echo "$result" | cut -d'|' -f3)
         set_exit=$(echo "$result" | cut -d'|' -f4)
 
-        local cmd="tailscale set"
-        [ "$set_dns" = "TRUE" ] && cmd="$cmd --accept-dns=true" || cmd="$cmd --accept-dns=false"
-        [ "$set_routes" = "TRUE" ] && cmd="$cmd --accept-routes=true" || cmd="$cmd --accept-routes=false"
-        [ "$set_ssh" = "TRUE" ] && cmd="$cmd --ssh=true" || cmd="$cmd --ssh=false"
-        [ "$set_exit" = "TRUE" ] && cmd="$cmd --advertise-exit-node" || cmd="$cmd --advertise-exit-node=false"
+        local cmd=(tailscale set)
+        [ "$set_dns" = "TRUE" ] && cmd+=(--accept-dns=true) || cmd+=(--accept-dns=false)
+        [ "$set_routes" = "TRUE" ] && cmd+=(--accept-routes=true) || cmd+=(--accept-routes=false)
+        [ "$set_ssh" = "TRUE" ] && cmd+=(--ssh=true) || cmd+=(--ssh=false)
+        [ "$set_exit" = "TRUE" ] && cmd+=(--advertise-exit-node) || cmd+=(--advertise-exit-node=false)
 
-        sudo $cmd 2>/dev/null
+        sudo "${cmd[@]}" 2>/dev/null
         show_info "Settings applied."
     fi
 }
@@ -297,7 +301,7 @@ start_tray() {
     exec 3>&- 2>/dev/null
     rm -f "$TRAY_PIPE"
 
-    mkfifo "$TRAY_PIPE"
+    mkfifo -m 600 "$TRAY_PIPE"
 
     local tooltip
     tooltip=$(get_tray_tooltip)
@@ -420,7 +424,7 @@ while true; do
     fi
     exec 3>&- 2>/dev/null
     rm -f "$TRAY_PIPE"
-    mkfifo "$TRAY_PIPE"
+    mkfifo -m 600 "$TRAY_PIPE"
 
     local_tooltip=$(get_tray_tooltip)
 
@@ -433,9 +437,8 @@ while true; do
     exec 3<>"$TRAY_PIPE"
 
     # This time, capture stdout from yad into a pipe we can read
-    RESPONSE_PIPE="/tmp/.tailscale-manager-resp-$$"
     rm -f "$RESPONSE_PIPE"
-    mkfifo "$RESPONSE_PIPE"
+    mkfifo -m 600 "$RESPONSE_PIPE"
 
     yad --notification \
         --listen \
