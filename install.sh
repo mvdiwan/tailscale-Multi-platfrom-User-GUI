@@ -19,6 +19,7 @@ done
 sudo install -m 755 "$SCRIPT_DIR/tMUG-tailscale-manager" /usr/local/bin/tMUG-tailscale-manager
 sudo install -m 644 "$SCRIPT_DIR/tMUG-tailscale-manager.desktop" /usr/share/applications/tMUG-tailscale-manager.desktop
 sudo install -m 644 "$SCRIPT_DIR/tmug.svg" /usr/share/pixmaps/tmug.svg
+sudo install -m 644 "$SCRIPT_DIR/packaging/polkit/com.dec-llc.tmug.policy" /usr/share/polkit-1/actions/com.dec-llc.tmug.policy
 sudo update-desktop-database /usr/share/applications/ 2>/dev/null || true
 
 echo "Done! tMUG is now available in your application menu."
