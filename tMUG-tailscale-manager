@@ -62,7 +62,7 @@ open_url() {
     # Try multiple methods to open URL — xdg-open can fail silently
     # when a browser is already running in some DEs
     if command -v xdg-open &>/dev/null; then
-        xdg-open "$url" 2>/dev/null &
+        open_url "$url"
         sleep 1
     fi
     # Verify a browser was actually launched; if not, try direct invocations
@@ -126,48 +126,80 @@ get_status_text() {
     fi
 }
 
-do_connect() {
-    local output
-    output=$(pkexec tailscale up 2>&1)
-    local rc=$?
+capture_auth_url() {
+    # Run a tailscale command in the background, capture output to a temp file,
+    # and wait for an auth URL to appear (or for the command to finish).
+    local cmd="$1"
+    local tmpfile
+    tmpfile=$(mktemp /tmp/tmug-auth-XXXXXX)
 
-    if [ $rc -eq 0 ] && [ "$(get_status)" = "connected" ]; then
-        show_info "Successfully connected to Tailscale!\n\nIP: $(get_ip)"
-    else
-        local url
-        url=$(echo "$output" | grep -oP 'https://login\.tailscale\.com/\S+')
-        if [ -n "$url" ]; then
-            open_url "$url"
-            show_info "A browser window has been opened for authentication.\n\nOnce you log in and authorize this device, it will connect automatically.\n\nIf the browser didn't open, visit:\n<tt>$url</tt>"
-        else
-            show_error "Failed to connect.\n\n$output"
+    sudo tailscale $cmd > "$tmpfile" 2>&1 &
+    local bg_pid=$!
+
+    # Wait up to 15 seconds for a URL to appear in the output
+    local url=""
+    for i in $(seq 1 30); do
+        if [ -f "$tmpfile" ]; then
+            url=$(grep -oP 'https://login\.tailscale\.com/\S+' "$tmpfile" 2>/dev/null)
+            [ -n "$url" ] && break
         fi
+        # If the process already exited, stop waiting
+        if ! kill -0 "$bg_pid" 2>/dev/null; then
+            break
+        fi
+        sleep 0.5
+    done
+
+    local output
+    output=$(cat "$tmpfile" 2>/dev/null)
+    rm -f "$tmpfile"
+
+    # Return results via global vars (bash doesn't have tuples)
+    _AUTH_URL="$url"
+    _AUTH_OUTPUT="$output"
+    _AUTH_PID="$bg_pid"
+    _AUTH_RUNNING=0
+    kill -0 "$bg_pid" 2>/dev/null && _AUTH_RUNNING=1
+}
+
+do_connect() {
+    # First check if already connected
+    if [ "$(get_status)" = "connected" ]; then
+        show_info "Already connected to Tailscale!\n\nIP: $(get_ip)"
+        update_tray_tooltip
+        return
+    fi
+
+    capture_auth_url "up"
+
+    if [ "$(get_status)" = "connected" ]; then
+        show_info "Successfully connected to Tailscale!\n\nIP: $(get_ip)"
+    elif [ -n "$_AUTH_URL" ]; then
+        open_url "$_AUTH_URL"
+        show_info "A browser window has been opened for authentication.\n\nOnce you log in and authorize this device, it will connect automatically.\n\nIf the browser didn't open, visit:\n<tt>$_AUTH_URL</tt>"
+    else
+        show_error "Failed to connect.\n\n$_AUTH_OUTPUT"
     fi
     update_tray_tooltip
 }
 
 do_login() {
-    local output
-    output=$(pkexec tailscale login 2>&1)
-    local rc=$?
+    capture_auth_url "login"
 
-    local url
-    url=$(echo "$output" | grep -oP 'https://login\.tailscale\.com/\S+')
-
-    if [ -n "$url" ]; then
-        xdg-open "$url" 2>/dev/null &
-        show_info "A browser window has been opened to log in to Tailscale.\n\nYou can:\n  - Sign up for a new account\n  - Log in to an existing account\n  - Add this device to your tailnet\n\nIf the browser didn't open, visit:\n<tt>$url</tt>"
-    elif [ $rc -eq 0 ]; then
+    if [ -n "$_AUTH_URL" ]; then
+        open_url "$_AUTH_URL"
+        show_info "A browser window has been opened to log in to Tailscale.\n\nYou can:\n  - Sign up for a new account\n  - Log in to an existing account\n  - Add this device to your tailnet\n\nIf the browser didn't open, visit:\n<tt>$_AUTH_URL</tt>"
+    elif [ "$(get_status)" = "connected" ]; then
         show_info "Already logged in and authenticated."
     else
-        show_error "Login failed.\n\n$output"
+        show_error "Login failed.\n\n$_AUTH_OUTPUT"
     fi
     update_tray_tooltip
 }
 
 do_logout() {
     if ask_confirm "Log out from Tailscale?\n\nThis will disconnect and expire your node key.\nYou will need to re-authenticate to reconnect."; then
-        pkexec tailscale logout 2>/dev/null
+        sudo tailscale logout 2>/dev/null
         show_info "Logged out from Tailscale."
     fi
     update_tray_tooltip
@@ -175,7 +207,7 @@ do_logout() {
 
 do_disconnect() {
     if ask_confirm "Disconnect from Tailscale?"; then
-        pkexec tailscale down 2>/dev/null
+        sudo tailscale down 2>/dev/null
         show_info "Disconnected from Tailscale."
     fi
     update_tray_tooltip
@@ -203,12 +235,12 @@ do_exit_node_menu() {
             local selected_ip
             selected_ip=$(echo "$choice" | cut -d'|' -f1)
             if [ -n "$selected_ip" ]; then
-                pkexec tailscale set --exit-node="$selected_ip" 2>/dev/null
+                sudo tailscale set --exit-node="$selected_ip" 2>/dev/null
                 show_info "Exit node set to: $selected_ip"
             fi
             ;;
         2)
-            pkexec tailscale set --exit-node="" 2>/dev/null
+            sudo tailscale set --exit-node="" 2>/dev/null
             show_info "Exit node cleared."
             ;;
     esac
@@ -247,7 +279,7 @@ do_settings() {
         [ "$set_ssh" = "TRUE" ] && cmd="$cmd --ssh=true" || cmd="$cmd --ssh=false"
         [ "$set_exit" = "TRUE" ] && cmd="$cmd --advertise-exit-node" || cmd="$cmd --advertise-exit-node=false"
 
-        pkexec $cmd 2>/dev/null
+        sudo $cmd 2>/dev/null
         show_info "Settings applied."
     fi
 }
