@@ -11,8 +11,25 @@ APP_VERSION="1.0.0"
 APP_AUTHOR="DEC-LLC (Diwan Enterprise Consulting LLC)"
 APP_LICENSE="Apache-2.0"
 ICON="/usr/share/pixmaps/tailscale.svg"
+LOCKFILE="/tmp/.tMUG-tailscale-manager.lock"
 TRAY_PIPE="/tmp/.tailscale-manager-tray-$$"
 TRAY_PID=""
+
+# --- Single instance check ---
+acquire_lock() {
+    exec 9>"$LOCKFILE"
+    if ! flock -n 9; then
+        # Another instance is running — try to bring its window to focus
+        yad --title="tMUG" --image=dialog-warning \
+            --text="tMUG is already running.\n\nCheck your system tray." \
+            --button="OK:0" --center --width=300 2>/dev/null
+        exit 0
+    fi
+    # Write our PID so others can identify us
+    echo $$ >&9
+}
+
+acquire_lock
 
 # Clean up on exit
 cleanup() {
@@ -22,6 +39,9 @@ cleanup() {
     fi
     exec 3>&- 2>/dev/null
     rm -f "$TRAY_PIPE"
+    # Release lock
+    exec 9>&-
+    rm -f "$LOCKFILE"
 }
 trap cleanup EXIT
 
@@ -35,6 +55,28 @@ show_info() {
 
 ask_confirm() {
     yad --title="Tailscale" --image=dialog-question --text="$1" --button="Yes:0" --button="No:1" --center --width=350 2>/dev/null
+}
+
+open_url() {
+    local url="$1"
+    # Try multiple methods to open URL — xdg-open can fail silently
+    # when a browser is already running in some DEs
+    if command -v xdg-open &>/dev/null; then
+        xdg-open "$url" 2>/dev/null &
+        sleep 1
+    fi
+    # Verify a browser was actually launched; if not, try direct invocations
+    if ! pgrep -f "$url" &>/dev/null; then
+        if command -v firefox &>/dev/null; then
+            firefox "$url" 2>/dev/null &
+        elif command -v google-chrome &>/dev/null; then
+            google-chrome "$url" 2>/dev/null &
+        elif command -v chromium-browser &>/dev/null; then
+            chromium-browser "$url" 2>/dev/null &
+        elif command -v brave-browser &>/dev/null; then
+            brave-browser "$url" 2>/dev/null &
+        fi
+    fi
 }
 
 get_status() {
@@ -95,7 +137,7 @@ do_connect() {
         local url
         url=$(echo "$output" | grep -oP 'https://login\.tailscale\.com/\S+')
         if [ -n "$url" ]; then
-            xdg-open "$url" 2>/dev/null &
+            open_url "$url"
             show_info "A browser window has been opened for authentication.\n\nOnce you log in and authorize this device, it will connect automatically.\n\nIf the browser didn't open, visit:\n<tt>$url</tt>"
         else
             show_error "Failed to connect.\n\n$output"

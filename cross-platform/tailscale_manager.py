@@ -5,11 +5,14 @@ By DEC-LLC (Diwan Enterprise Consulting LLC)
 License: Apache-2.0
 """
 
+import fcntl
 import json
+import os
 import platform
 import re
 import subprocess
 import sys
+import tempfile
 import webbrowser
 
 from PyQt5.QtCore import Qt, QTimer, QSize
@@ -475,7 +478,7 @@ class MainWindow(QMainWindow):
         else:
             url = _extract_auth_url(combined)
             if url:
-                webbrowser.open(url)
+                open_url(url)
                 QMessageBox.information(
                     self, "Tailscale",
                     "A browser window has been opened for authentication.\n\n"
@@ -625,15 +628,66 @@ def _extract_auth_url(text):
     return match.group(0) if match else None
 
 
+def open_url(url):
+    """Open a URL in the default browser, with fallbacks for when
+    xdg-open fails silently (e.g. browser already running in some DEs)."""
+    system = platform.system()
+    try:
+        if system == "Linux":
+            # Try xdg-open first
+            subprocess.Popen(["xdg-open", url],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            # Also try direct browser invocation as fallback
+            # xdg-open can silently fail to open new tabs in running browsers
+            import time
+            time.sleep(0.5)
+            for browser in ["firefox", "google-chrome", "chromium-browser", "brave-browser"]:
+                try:
+                    subprocess.Popen([browser, url],
+                                     stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL)
+                    return
+                except FileNotFoundError:
+                    continue
+        else:
+            webbrowser.open(url)
+    except Exception:
+        webbrowser.open(url)
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
+def acquire_single_instance():
+    """Ensure only one instance of tMUG is running using a lock file.
+    Returns the lock file object (must stay open for the lifetime of the app)."""
+    lock_path = os.path.join(tempfile.gettempdir(), ".tMUG-tailscale-manager.lock")
+    lock_file = open(lock_path, "w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock_file.write(str(os.getpid()))
+        lock_file.flush()
+        return lock_file
+    except (IOError, OSError):
+        return None
+
 
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("tMUG")
     app.setQuitOnLastWindowClosed(False)  # keep running in tray
     app.setWindowIcon(make_icon())
+
+    # Single instance check
+    lock = acquire_single_instance()
+    if lock is None:
+        QMessageBox.warning(
+            None, "tMUG",
+            "tMUG is already running.\n\nCheck your system tray."
+        )
+        sys.exit(0)
 
     if not QSystemTrayIcon.isSystemTrayAvailable():
         QMessageBox.critical(
