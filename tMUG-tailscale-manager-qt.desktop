@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=tMUG (Qt)
+Comment=tMUG - Tailscale Multi-platform User GUI (PyQt5 version)
+Exec=/usr/local/bin/tMUG-tailscale-manager-qt
+Icon=tailscale
+Terminal=false
+Type=Application
+Categories=Network;VPN;Settings;
+Keywords=tailscale;vpn;wireguard;network;tmug;
+StartupNotify=false

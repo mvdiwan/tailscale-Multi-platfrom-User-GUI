@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Generic mesh/network icon - not the Tailscale logo -->
+  <rect width="256" height="256" rx="48" fill="#2d3748"/>
+  <!-- Network nodes in a mesh pattern -->
+  <circle cx="128" cy="64" r="16" fill="#63b3ed"/>
+  <circle cx="64" cy="128" r="16" fill="#63b3ed"/>
+  <circle cx="192" cy="128" r="16" fill="#63b3ed"/>
+  <circle cx="96" cy="192" r="16" fill="#63b3ed"/>
+  <circle cx="160" cy="192" r="16" fill="#63b3ed"/>
+  <!-- Connection lines -->
+  <line x1="128" y1="64" x2="64" y2="128" stroke="#63b3ed" stroke-width="4" opacity="0.6"/>
+  <line x1="128" y1="64" x2="192" y2="128" stroke="#63b3ed" stroke-width="4" opacity="0.6"/>
+  <line x1="64" y1="128" x2="96" y2="192" stroke="#63b3ed" stroke-width="4" opacity="0.6"/>
+  <line x1="192" y1="128" x2="160" y2="192" stroke="#63b3ed" stroke-width="4" opacity="0.6"/>
+  <line x1="64" y1="128" x2="192" y2="128" stroke="#63b3ed" stroke-width="4" opacity="0.6"/>
+  <line x1="96" y1="192" x2="160" y2="192" stroke="#63b3ed" stroke-width="4" opacity="0.6"/>
+  <line x1="128" y1="64" x2="96" y2="192" stroke="#63b3ed" stroke-width="2" opacity="0.3"/>
+  <line x1="128" y1="64" x2="160" y2="192" stroke="#63b3ed" stroke-width="2" opacity="0.3"/>
+  <!-- Center highlight node -->
+  <circle cx="128" cy="128" r="12" fill="#4fd1c5"/>
+  <line x1="128" y1="128" x2="128" y2="64" stroke="#4fd1c5" stroke-width="3" opacity="0.5"/>
+  <line x1="128" y1="128" x2="64" y2="128" stroke="#4fd1c5" stroke-width="3" opacity="0.5"/>
+  <line x1="128" y1="128" x2="192" y2="128" stroke="#4fd1c5" stroke-width="3" opacity="0.5"/>
+  <line x1="128" y1="128" x2="96" y2="192" stroke="#4fd1c5" stroke-width="3" opacity="0.5"/>
+  <line x1="128" y1="128" x2="160" y2="192" stroke="#4fd1c5" stroke-width="3" opacity="0.5"/>
+</svg>
