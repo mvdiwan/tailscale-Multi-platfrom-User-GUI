@@ -1,33 +1,58 @@
 # Tailscale Manager
 
-A lightweight GUI for managing [Tailscale](https://tailscale.com/) on Linux desktops. Built with Bash and [YAD](https://github.com/v1cont/yad) (Yet Another Dialog).
+A lightweight GUI for managing [Tailscale](https://tailscale.com/) on desktop systems.
+
+Provides a graphical interface with system tray integration for connecting, disconnecting, authenticating, and configuring Tailscale — no terminal required.
+
+**Author:** DEC-LLC (Diwan Enterprise Consulting LLC)
+**License:** MIT
 
 ## Features
 
+- **System Tray** — minimizes to tray with status icon; right-click menu for quick actions
 - **Connect / Disconnect** — bring Tailscale up or down
 - **Login / Sign Up** — opens Tailscale authentication in your default browser to sign up, log in, or add the device to your tailnet
 - **Logout** — disconnect and expire the node key
 - **Status** — view your Tailscale IP, hostname, and connected peers
 - **Exit Node** — select or clear an exit node to route traffic through
 - **Settings** — toggle Accept DNS, Accept Routes, SSH, and Advertise as Exit Node
+- **About** — version and author info
 
-Uses `pkexec` for privilege escalation (graphical sudo prompt) and `xdg-open` to open auth URLs in your default browser.
+## Two Versions
 
-## Screenshots
+### Bash + YAD (Linux only)
 
-The main window shows your connection status and provides buttons for all operations.
+A lightweight version using Bash and [YAD](https://github.com/v1cont/yad) dialogs. Located in the project root.
 
-## Dependencies
-
-- **tailscale** — the Tailscale CLI and daemon ([install](https://tailscale.com/download/linux))
-- **yad** — Yet Another Dialog (`sudo apt install yad`)
-- **pkexec** — PolicyKit agent (included in most desktop environments)
-- **xdg-open** — desktop URL opener (included in most desktop environments)
-
-## Installation
+**Dependencies:** `tailscale`, `yad`, `pkexec`, `xdg-open`
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/tailscale-manager.git
+# Install
+chmod +x install.sh
+./install.sh
+
+# Or run directly
+./tailscale-manager
+```
+
+### Python + PyQt5 (Cross-platform)
+
+A full cross-platform version using Python and PyQt5. Located in `cross-platform/`. Works on Linux, macOS, and Windows.
+
+**Dependencies:** Python 3.6+, PyQt5, Tailscale CLI
+
+```bash
+cd cross-platform
+pip install -r requirements.txt
+python3 tailscale_manager.py
+```
+
+See [cross-platform/README.md](cross-platform/README.md) for platform-specific details.
+
+## Installation (Bash version)
+
+```bash
+git clone https://github.com/mvdiwan/tailscale-manager.git
 cd tailscale-manager
 chmod +x install.sh
 ./install.sh
@@ -65,10 +90,12 @@ tailscale-manager
 4. Authorize the device
 5. Click **Connect** to bring Tailscale up
 
+The app minimizes to the system tray when you close the window. Right-click the tray icon for quick actions, or click "Quit" to fully exit.
+
 ## How it works
 
-This is a simple Bash script that wraps the `tailscale` CLI commands in a YAD-based GUI. All privileged operations (connect, disconnect, login, settings changes) go through `pkexec` so you get a proper graphical authentication prompt.
+Both versions wrap the `tailscale` CLI in a GUI. Privileged operations (connect, disconnect, login, settings changes) use `pkexec` on Linux for a graphical authentication prompt. The system tray icon shows connection status and provides quick access to common actions.
 
 ## License
 
-MIT
+MIT - Copyright (c) 2026 DEC-LLC (Diwan Enterprise Consulting LLC)
