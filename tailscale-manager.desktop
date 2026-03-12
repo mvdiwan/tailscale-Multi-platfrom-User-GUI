@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Tailscale Manager
+Comment=Connect, disconnect, and configure Tailscale VPN
+Exec=/usr/local/bin/tailscale-manager
+Icon=tailscale
+Terminal=false
+Type=Application
+Categories=Network;VPN;Settings;
+Keywords=tailscale;vpn;wireguard;network;
+StartupNotify=false
