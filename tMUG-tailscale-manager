@@ -2,12 +2,12 @@
 # tMUG - Tailscale Multi-platform User GUI
 # Uses yad for dialogs and system tray notification
 #
-# Version: 1.2.0
+# Version: 1.3.0
 # Author:  DEC-LLC (Diwan Enterprise Consulting LLC)
 # License: Apache-2.0
 
 APP_NAME="tMUG"
-APP_VERSION="1.2.0"
+APP_VERSION="1.3.0"
 APP_AUTHOR="DEC-LLC (Diwan Enterprise Consulting LLC)"
 APP_LICENSE="Apache-2.0"
 ICON="/usr/share/pixmaps/tmug.svg"
@@ -57,6 +57,42 @@ show_info() {
 
 ask_confirm() {
     yad --title="Tailscale" --image=dialog-question --text="$1" --button="Yes:0" --button="No:1" --center --width=350 2>/dev/null
+}
+
+# --- Operator Privilege Setup ---
+ensure_operator() {
+    # Check if the current user is the tailscale operator
+    local current_operator
+    current_operator=$(tailscale debug prefs 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('OperatorUser',''))" 2>/dev/null)
+
+    if [ "$current_operator" = "$USER" ]; then
+        return 0
+    fi
+
+    # Operator not set or set to a different user — prompt for one-time setup
+    yad --title="$APP_NAME - First-Time Setup" --image=dialog-information \
+        --text="\n<b>One-time setup required</b>\n\ntMUG needs to register you (<b>$USER</b>) as the Tailscale operator.\n\nThis allows tMUG to manage Tailscale without needing\nyour password for every action.\n\nYou will be prompted for your admin password once." \
+        --button="Continue:0" --button="Cancel:1" --center --width=450 2>/dev/null
+    if [ $? -ne 0 ]; then
+        exit 0
+    fi
+
+    # Try pkexec first (graphical prompt, better for desktop)
+    if command -v pkexec &>/dev/null; then
+        pkexec tailscale set --operator="$USER"
+    else
+        # Fall back: open a terminal for sudo
+        xterm -e "sudo tailscale set --operator='$USER'" 2>/dev/null || \
+        mate-terminal -e "sudo tailscale set --operator='$USER'" 2>/dev/null || \
+        gnome-terminal -- sudo tailscale set --operator="$USER" 2>/dev/null
+    fi
+
+    # Verify it worked
+    current_operator=$(tailscale debug prefs 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('OperatorUser',''))" 2>/dev/null)
+    if [ "$current_operator" != "$USER" ]; then
+        show_error "Failed to set Tailscale operator.\n\nPlease try running manually:\n<tt>sudo tailscale set --operator=$USER</tt>"
+        exit 1
+    fi
 }
 
 open_url() {
@@ -130,7 +166,7 @@ capture_auth_url() {
     tmpfile=$(mktemp /tmp/tmug-auth-XXXXXX)
     chmod 600 "$tmpfile"
 
-    sudo tailscale "$cmd" > "$tmpfile" 2>&1 &
+    tailscale "$cmd" > "$tmpfile" 2>&1 &
     local bg_pid=$!
 
     # Wait up to 15 seconds for a URL to appear in the output
@@ -197,7 +233,7 @@ do_login() {
 
 do_logout() {
     if ask_confirm "Log out from Tailscale?\n\nThis will disconnect and expire your node key.\nYou will need to re-authenticate to reconnect."; then
-        sudo tailscale logout 2>/dev/null
+        tailscale logout 2>/dev/null
         show_info "Logged out from Tailscale."
     fi
     update_tray_tooltip
@@ -205,7 +241,7 @@ do_logout() {
 
 do_disconnect() {
     if ask_confirm "Disconnect from Tailscale?"; then
-        sudo tailscale down 2>/dev/null
+        tailscale down 2>/dev/null
         show_info "Disconnected from Tailscale."
     fi
     update_tray_tooltip
@@ -233,12 +269,12 @@ do_exit_node_menu() {
             local selected_ip
             selected_ip=$(echo "$choice" | cut -d'|' -f1)
             if [ -n "$selected_ip" ]; then
-                sudo tailscale set --exit-node="$selected_ip" 2>/dev/null
+                tailscale set --exit-node="$selected_ip" 2>/dev/null
                 show_info "Exit node set to: $selected_ip"
             fi
             ;;
         2)
-            sudo tailscale set --exit-node="" 2>/dev/null
+            tailscale set --exit-node="" 2>/dev/null
             show_info "Exit node cleared."
             ;;
     esac
@@ -278,7 +314,7 @@ do_settings() {
         [ "$set_ssh" = "TRUE" ] && cmd+=(--ssh=true) || cmd+=(--ssh=false)
         [ "$set_exit" = "TRUE" ] && cmd+=(--advertise-exit-node) || cmd+=(--advertise-exit-node=false)
 
-        sudo "${cmd[@]}" 2>/dev/null
+        "${cmd[@]}" 2>/dev/null
         show_info "Settings applied."
     fi
 }
@@ -406,6 +442,9 @@ show_main_window() {
 }
 
 # --- Main Entry Point ---
+
+# Ensure the current user is the Tailscale operator (one-time setup)
+ensure_operator
 
 # Start the system tray icon
 start_tray
