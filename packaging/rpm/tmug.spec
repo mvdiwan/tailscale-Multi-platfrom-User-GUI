@@ -38,7 +38,7 @@ install -D -m 0644 tMUG-tailscale-manager.desktop %{buildroot}/usr/share/applica
 install -D -m 0644 tMUG-tailscale-manager-qt.desktop %{buildroot}/usr/share/applications/tMUG-tailscale-manager-qt.desktop
 
 # Icon
-install -D -m 0644 tailscale.svg %{buildroot}/usr/share/pixmaps/tailscale.svg
+install -D -m 0644 tmug.svg %{buildroot}/usr/share/pixmaps/tmug.svg
 
 %files
 /usr/local/bin/tMUG-tailscale-manager
@@ -46,7 +46,7 @@ install -D -m 0644 tailscale.svg %{buildroot}/usr/share/pixmaps/tailscale.svg
 /usr/share/tmug/tailscale_manager.py
 /usr/share/applications/tMUG-tailscale-manager.desktop
 /usr/share/applications/tMUG-tailscale-manager-qt.desktop
-/usr/share/pixmaps/tailscale.svg
+/usr/share/pixmaps/tmug.svg
 
 %dir /usr/share/tmug
 

@@ -15,7 +15,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 APP_NAME="tMUG-tailscale-manager"
-APP_VERSION="1.1.0"
+APP_VERSION="1.2.0"
 MAIN_SCRIPT="$PROJECT_ROOT/cross-platform/tailscale_manager.py"
 
 echo "=== tMUG Windows .exe Build ==="
@@ -67,7 +67,7 @@ pyinstaller \
     --onefile \
     --windowed \
     --name "$APP_NAME" \
-    --add-data "$PROJECT_ROOT/tailscale.svg;." \
+    --add-data "$PROJECT_ROOT/tmug.svg;." \
     --distpath "$SCRIPT_DIR/dist" \
     --workpath "$SCRIPT_DIR/build" \
     --specpath "$SCRIPT_DIR" \
@@ -84,7 +84,7 @@ echo "To create a full installer, open tmug-setup.iss in Inno Setup Compiler."
 #
 #   cd path\to\tailscale-manager
 #   pyinstaller --onefile --windowed --name tMUG-tailscale-manager ^
-#       --add-data "tailscale.svg;." ^
+#       --add-data "tmug.svg;." ^
 #       cross-platform\tailscale_manager.py
 #
 # The resulting .exe will be in the dist\ directory.

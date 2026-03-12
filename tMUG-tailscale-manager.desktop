@@ -2,7 +2,7 @@
 Name=tMUG
 Comment=tMUG - Tailscale Multi-platform User GUI
 Exec=/usr/local/bin/tMUG-tailscale-manager
-Icon=tailscale
+Icon=tmug
 Terminal=false
 Type=Application
 Categories=Network;VPN;Settings;

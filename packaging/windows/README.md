@@ -32,7 +32,7 @@ Creates a single self-contained executable that does not require Python to be in
 pip install PyQt5 pyinstaller
 cd path\to\tailscale-manager
 pyinstaller --onefile --windowed --name tMUG-tailscale-manager ^
-    --add-data "tailscale.svg;." ^
+    --add-data "tmug.svg;." ^
     cross-platform\tailscale_manager.py
 ```
 
@@ -73,6 +73,6 @@ This gives users a familiar install wizard that installs a self-contained applic
 
 ## Notes
 
-- **Icon:** Windows executables and shortcuts require .ico format icons. Convert `tailscale.svg` to `.ico` before building. The SVG reference in the .iss file will need to be updated to point to the .ico file.
+- **Icon:** Windows executables and shortcuts require .ico format icons. Convert `tmug.svg` to `.ico` before building. The SVG reference in the .iss file will need to be updated to point to the .ico file.
 - **Code signing:** For distribution outside your organization, consider signing the .exe with a code signing certificate to avoid SmartScreen warnings.
 - **UAC:** tMUG needs administrator privileges to manage Tailscale. The application requests elevation at runtime as needed.

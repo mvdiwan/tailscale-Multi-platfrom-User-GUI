@@ -25,8 +25,8 @@ python3 tailscale_manager.py
 ## Platform Notes
 
 ### Linux
-- Privileged Tailscale commands (connect, disconnect, settings changes) are wrapped with `pkexec` for authorization.
-- Ensure `polkit` (PolicyKit) is installed for the `pkexec` prompts to work.
+- Privileged Tailscale commands (connect, disconnect, settings changes) are wrapped with `sudo` for authorization.
+- Ensure the current user has `sudo` privileges.
 - The `tailscale` CLI is expected at `/usr/bin/tailscale` (default).
 
 ### macOS

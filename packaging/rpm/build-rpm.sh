@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 PKG_NAME="tmug"
-PKG_VERSION="1.1.0"
+PKG_VERSION="1.2.0"
 TARBALL_DIR="${PKG_NAME}-${PKG_VERSION}"
 
 # Check for rpmbuild
@@ -41,7 +41,7 @@ mkdir -p "${STAGING_DIR}/${TARBALL_DIR}"
 cp "${PROJECT_ROOT}/tMUG-tailscale-manager"             "${STAGING_DIR}/${TARBALL_DIR}/"
 cp "${PROJECT_ROOT}/tMUG-tailscale-manager.desktop"     "${STAGING_DIR}/${TARBALL_DIR}/"
 cp "${PROJECT_ROOT}/tMUG-tailscale-manager-qt.desktop"  "${STAGING_DIR}/${TARBALL_DIR}/"
-cp "${PROJECT_ROOT}/tailscale.svg"                      "${STAGING_DIR}/${TARBALL_DIR}/"
+cp "${PROJECT_ROOT}/tmug.svg"                           "${STAGING_DIR}/${TARBALL_DIR}/"
 cp "${PROJECT_ROOT}/cross-platform/tailscale_manager.py" "${STAGING_DIR}/${TARBALL_DIR}/"
 
 # Create the Qt wrapper script if it doesn't already exist in the project

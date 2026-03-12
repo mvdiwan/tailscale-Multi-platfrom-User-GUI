@@ -2,15 +2,15 @@
 # tMUG - Tailscale Multi-platform User GUI
 # Uses yad for dialogs and system tray notification
 #
-# Version: 1.0.0
+# Version: 1.2.0
 # Author:  DEC-LLC (Diwan Enterprise Consulting LLC)
 # License: Apache-2.0
 
 APP_NAME="tMUG"
-APP_VERSION="1.0.0"
+APP_VERSION="1.2.0"
 APP_AUTHOR="DEC-LLC (Diwan Enterprise Consulting LLC)"
 APP_LICENSE="Apache-2.0"
-ICON="/usr/share/pixmaps/tailscale.svg"
+ICON="/usr/share/pixmaps/tmug.svg"
 LOCKFILE="/tmp/.tMUG-tailscale-manager.lock"
 TRAY_PIPE="/tmp/.tailscale-manager-tray-$$"
 TRAY_PID=""
