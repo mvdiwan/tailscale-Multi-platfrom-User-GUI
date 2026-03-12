@@ -1,7 +1,0 @@
-#!/bin/bash
-set -e
-chmod +x /usr/local/bin/tMUG-tailscale-manager
-chmod +x /usr/local/bin/tMUG-tailscale-manager-qt
-if command -v update-desktop-database >/dev/null 2>&1; then
-    update-desktop-database /usr/share/applications || true
-fi

@@ -6,10 +6,12 @@ License: Apache-2.0
 """
 
 import atexit
+import getpass
 import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -21,7 +23,7 @@ if platform.system() != "Windows":
 else:
     import msvcrt
 
-from PyQt5.QtCore import Qt, QTimer, QSize
+from PyQt5.QtCore import Qt, QTimer, QSize, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QIcon, QPainter, QPixmap
 from PyQt5.QtWidgets import (
     QAction,
@@ -45,10 +47,35 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 AUTHOR = "DEC-LLC (Diwan Enterprise Consulting LLC)"
 LICENSE = "Apache-2.0"
 POLL_INTERVAL_MS = 10000  # 10 seconds
+AUTH_SUBPROCESS_TIMEOUT = 60  # seconds (#8, #24)
+MAX_ERROR_OUTPUT_LEN = 500  # characters (#22)
+
+
+# ---------------------------------------------------------------------------
+# Sanitization helpers (#22)
+# ---------------------------------------------------------------------------
+
+def _sanitize_output(text):
+    """Strip sensitive info (node keys, internal IPs) from error output
+    before displaying in dialogs."""
+    if not text:
+        return text
+    # Remove lines containing key material
+    lines = text.splitlines()
+    sanitized = [
+        line for line in lines
+        if not re.search(r'\bkey:', line, re.IGNORECASE)
+        and not re.search(r'nodekey:', line, re.IGNORECASE)
+    ]
+    result = "\n".join(sanitized)
+    # Truncate overly long output
+    if len(result) > MAX_ERROR_OUTPUT_LEN:
+        result = result[:MAX_ERROR_OUTPUT_LEN] + "\n... (output truncated)"
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -69,15 +96,104 @@ def _tailscale_cmd():
     return "tailscale"
 
 
-def _run(args, privileged=False, timeout=30):
-    """Run a tailscale CLI command and return (returncode, stdout, stderr).
+# ---------------------------------------------------------------------------
+# Operator setup (#19)
+# ---------------------------------------------------------------------------
 
-    On Linux privileged commands are wrapped with sudo.
-    On other platforms the caller is expected to run as admin if needed.
+def _ensure_operator():
+    """Ensure the current user is set as the Tailscale operator.
+
+    If the operator is not yet set, prompt for admin credentials once via the
+    platform-appropriate elevation mechanism (pkexec/sudo on Linux, osascript
+    on macOS, ShellExecuteW on Windows).
+
+    Returns True if the operator is (now) set, False on failure.
     """
+    username = getpass.getuser()
+    ts = _tailscale_cmd()
+    system = _system()
+
+    # Check current operator via `tailscale debug prefs`
+    try:
+        proc = subprocess.run(
+            [ts, "debug", "prefs"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            prefs = json.loads(proc.stdout)
+            if prefs.get("OperatorUser") == username:
+                return True
+    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
+        pass
+
+    # Operator not set -- ask the user
+    reply = QMessageBox.question(
+        None,
+        "tMUG - One-time Setup",
+        f"tMUG needs to register <b>{username}</b> as the Tailscale operator "
+        "so it can manage connections without requiring admin privileges "
+        "every time.\n\n"
+        "This is a one-time setup that requires administrator access.\n\n"
+        "Proceed?",
+        QMessageBox.Yes | QMessageBox.No,
+    )
+    if reply != QMessageBox.Yes:
+        return False
+
+    set_cmd = [ts, "set", f"--operator={username}"]
+
+    if system == "Linux":
+        # Prefer pkexec; fall back to a terminal with sudo
+        if shutil.which("pkexec"):
+            rc = subprocess.call(["pkexec"] + set_cmd)
+        else:
+            # Open a terminal so the user can enter their password
+            term = shutil.which("x-terminal-emulator") or shutil.which("xterm")
+            if term:
+                rc = subprocess.call(
+                    [term, "-e", f"sudo {' '.join(set_cmd)}"]
+                )
+            else:
+                rc = subprocess.call(["sudo"] + set_cmd)
+    elif system == "Darwin":
+        shell_cmd = subprocess.list2cmdline(set_cmd)
+        script = f'do shell script "{shell_cmd}" with administrator privileges'
+        rc = subprocess.call(["osascript", "-e", script])
+    elif system == "Windows":
+        import ctypes
+        # ShellExecuteW returns >32 on success
+        ret = ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", set_cmd[0],
+            " ".join(set_cmd[1:]), None, 1,
+        )
+        rc = 0 if ret > 32 else 1
+    else:
+        rc = subprocess.call(set_cmd)
+
+    if rc != 0:
+        return False
+
+    # Verify operator was set
+    try:
+        proc = subprocess.run(
+            [ts, "debug", "prefs"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            prefs = json.loads(proc.stdout)
+            return prefs.get("OperatorUser") == username
+    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
+        pass
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Command runners (no privilege escalation -- relies on operator flag)
+# ---------------------------------------------------------------------------
+
+def _run(args, timeout=30):
+    """Run a tailscale CLI command and return (returncode, stdout, stderr)."""
     cmd = [_tailscale_cmd()] + args
-    if privileged and _system() == "Linux":
-        cmd = ["sudo"] + cmd
 
     try:
         proc = subprocess.run(
@@ -100,20 +216,29 @@ def _run_auth_command(args):
 
     Runs the command in the background, polls for an auth URL in the output,
     and returns (url_or_none, full_output, process).
+    Fixes #8, #18, #24: secure temp file, proper handle/process cleanup, timeout.
     """
     cmd = [_tailscale_cmd()] + args
-    if _system() == "Linux":
-        cmd = ["sudo"] + cmd
 
-    tmpfile = tempfile.NamedTemporaryFile(
-        mode="w+", prefix="tmug-auth-", suffix=".txt", delete=False
+    # #18: Create temp file with restrictive permissions (0o600) to avoid
+    # leaking auth URLs to other users on the system.
+    tmpdir = tempfile.gettempdir()
+    tmpname = os.path.join(tmpdir, f"tmug-auth-{os.getpid()}.txt")
+    fd = os.open(
+        tmpname,
+        os.O_CREAT | os.O_WRONLY | os.O_EXCL,
+        0o600,
     )
-    tmpfile.close()
+    os.close(fd)
 
+    # #8, #24: Track file handle and process for proper cleanup
+    stdout_fh = None
+    proc = None
     try:
+        stdout_fh = open(tmpname, "w")
         proc = subprocess.Popen(
             cmd,
-            stdout=open(tmpfile.name, "w"),
+            stdout=stdout_fh,
             stderr=subprocess.STDOUT,
         )
 
@@ -121,7 +246,7 @@ def _run_auth_command(args):
         url = None
         for _ in range(30):
             try:
-                with open(tmpfile.name, "r") as f:
+                with open(tmpname, "r") as f:
                     content = f.read()
                 url = _extract_auth_url(content)
                 if url:
@@ -132,15 +257,42 @@ def _run_auth_command(args):
                 break
             time.sleep(0.5)
 
-        with open(tmpfile.name, "r") as f:
+        with open(tmpname, "r") as f:
             output = f.read()
+
+        # #8, #24: If the process is still running after polling, give it a
+        # timeout then forcefully terminate it.
+        if proc.poll() is None:
+            try:
+                proc.wait(timeout=AUTH_SUBPROCESS_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
 
         return url, output, proc
     except Exception as e:
+        # #24: Terminate orphaned process on exception
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
         return None, str(e), None
     finally:
+        # #8, #24: Always close the file handle
+        if stdout_fh is not None:
+            try:
+                stdout_fh.close()
+            except Exception:
+                pass
         try:
-            os.unlink(tmpfile.name)
+            os.unlink(tmpname)
         except Exception:
             pass
 
@@ -250,6 +402,21 @@ def get_current_prefs():
         except json.JSONDecodeError:
             pass
     return {}
+
+
+# ---------------------------------------------------------------------------
+# Status polling worker thread (#13)
+# ---------------------------------------------------------------------------
+
+class StatusWorker(QThread):
+    """Runs tailscale status checks in a background thread to avoid
+    blocking the GUI event loop (#13)."""
+    status_ready = pyqtSignal(bool, str)  # (connected, ip_or_none)
+
+    def run(self):
+        connected = is_connected()
+        ip = get_ip() if connected else None
+        self.status_ready.emit(connected, ip or "")
 
 
 # ---------------------------------------------------------------------------
@@ -389,12 +556,15 @@ class SettingsDialog(QDialog):
         else:
             args.append("--advertise-exit-node=false")
 
-        rc, out, err = _run(args, privileged=True)
+        rc, out, err = _run(args)
         if rc == 0:
             QMessageBox.information(self, "Tailscale", "Settings applied.")
             self.accept()
         else:
-            QMessageBox.critical(self, "Tailscale", f"Failed to apply settings.\n\n{err or out}")
+            QMessageBox.critical(
+                self, "Tailscale",
+                f"Failed to apply settings.\n\n{_sanitize_output(err or out)}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +577,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("tMUG")
         self.setFixedSize(420, 350)
         self.setWindowIcon(make_icon())
+        self._status_worker = None  # Track active worker thread (#13)
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -486,18 +657,28 @@ class MainWindow(QMainWindow):
         self.tray.setContextMenu(tray_menu)
         self.tray.show()
 
-        # ---- Status polling timer ----
+        # ---- Status polling timer (#13) ----
+        # The QTimer fires on the main thread, but the actual subprocess
+        # call happens in a StatusWorker QThread to keep the GUI responsive.
         self._poll_timer = QTimer(self)
         self._poll_timer.timeout.connect(self._poll_status)
         self._poll_timer.start(POLL_INTERVAL_MS)
         self._poll_status()  # initial
 
-    # -- Polling ----------------------------------------------------------
+    # -- Polling (#13) ----------------------------------------------------
 
     def _poll_status(self):
-        connected = is_connected()
-        ip = get_ip() if connected else None
+        """Start a background worker to check tailscale status without
+        blocking the GUI event loop (#13)."""
+        # Don't stack up workers if a previous one is still running
+        if self._status_worker is not None and self._status_worker.isRunning():
+            return
+        self._status_worker = StatusWorker()
+        self._status_worker.status_ready.connect(self._on_status_result)
+        self._status_worker.start()
 
+    def _on_status_result(self, connected, ip):
+        """Handle status result from the background worker thread (#13)."""
         if connected:
             self.status_label.setText(f"<b>Connected</b> ({ip or 'N/A'})")
             self.connect_btn.setText("Disconnect")
@@ -551,7 +732,7 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.critical(
                 self, "Tailscale",
-                f"Failed to connect.\n\n{output}"
+                f"Failed to connect.\n\n{_sanitize_output(output)}"
             )
         self._poll_status()
 
@@ -561,11 +742,14 @@ class MainWindow(QMainWindow):
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
-            rc, out, err = _run(["down"], privileged=True)
+            rc, out, err = _run(["down"])
             if rc == 0:
                 QMessageBox.information(self, "Tailscale", "Disconnected from Tailscale.")
             else:
-                QMessageBox.critical(self, "Tailscale", f"Failed to disconnect.\n\n{err or out}")
+                QMessageBox.critical(
+                    self, "Tailscale",
+                    f"Failed to disconnect.\n\n{_sanitize_output(err or out)}"
+                )
         self._poll_status()
 
     def _on_auth(self):
@@ -591,7 +775,10 @@ class MainWindow(QMainWindow):
         elif is_connected():
             QMessageBox.information(self, "Tailscale", "Already logged in and authenticated.")
         else:
-            QMessageBox.critical(self, "Tailscale", f"Login failed.\n\n{output}")
+            QMessageBox.critical(
+                self, "Tailscale",
+                f"Login failed.\n\n{_sanitize_output(output)}"
+            )
         self._poll_status()
 
     def _do_logout(self):
@@ -603,11 +790,14 @@ class MainWindow(QMainWindow):
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
-            rc, out, err = _run(["logout"], privileged=True)
+            rc, out, err = _run(["logout"])
             if rc == 0:
                 QMessageBox.information(self, "Tailscale", "Logged out from Tailscale.")
             else:
-                QMessageBox.critical(self, "Tailscale", f"Logout failed.\n\n{err or out}")
+                QMessageBox.critical(
+                    self, "Tailscale",
+                    f"Logout failed.\n\n{_sanitize_output(err or out)}"
+                )
         self._poll_status()
 
     def _on_status(self):
@@ -619,7 +809,7 @@ class MainWindow(QMainWindow):
         if dlg.exec_() == QDialog.Accepted:
             if dlg.action == "set" and dlg.selected_ip:
                 rc, out, err = _run(
-                    ["set", f"--exit-node={dlg.selected_ip}"], privileged=True
+                    ["set", f"--exit-node={dlg.selected_ip}"]
                 )
                 if rc == 0:
                     QMessageBox.information(
@@ -629,16 +819,16 @@ class MainWindow(QMainWindow):
                 else:
                     QMessageBox.critical(
                         self, "Tailscale",
-                        f"Failed to set exit node.\n\n{err or out}"
+                        f"Failed to set exit node.\n\n{_sanitize_output(err or out)}"
                     )
             elif dlg.action == "clear":
-                rc, out, err = _run(["set", "--exit-node="], privileged=True)
+                rc, out, err = _run(["set", "--exit-node="])
                 if rc == 0:
                     QMessageBox.information(self, "Tailscale", "Exit node cleared.")
                 else:
                     QMessageBox.critical(
                         self, "Tailscale",
-                        f"Failed to clear exit node.\n\n{err or out}"
+                        f"Failed to clear exit node.\n\n{_sanitize_output(err or out)}"
                     )
 
     def _on_settings(self):
@@ -702,7 +892,7 @@ def open_url(url):
                 return
             except FileNotFoundError:
                 pass
-            # xdg-open not available — try direct browser invocation
+            # xdg-open not available -- try direct browser invocation
             for browser in ["firefox", "google-chrome", "chromium-browser", "brave-browser"]:
                 try:
                     subprocess.Popen([browser, url],
@@ -725,29 +915,59 @@ def open_url(url):
 
 def acquire_single_instance():
     """Ensure only one instance of tMUG is running using a lock file.
-    Returns the lock file object (must stay open for the lifetime of the app)."""
+    Returns the lock file object (must stay open for the lifetime of the app).
+    Fix #21: use O_NOFOLLOW on Linux/macOS to prevent symlink attacks."""
     lock_path = os.path.join(tempfile.gettempdir(), ".tMUG-tailscale-manager.lock")
-    lock_file = open(lock_path, "w")
-    try:
-        if platform.system() == "Windows":
+
+    if platform.system() == "Windows":
+        # Windows does not support O_NOFOLLOW; use plain open + msvcrt locking
+        lock_file = open(lock_path, "w")
+        try:
             msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
+            lock_file.write(str(os.getpid()))
+            lock_file.flush()
+
+            def _release_lock():
+                try:
+                    lock_file.close()
+                    os.remove(lock_path)
+                except OSError:
+                    pass
+
+            atexit.register(_release_lock)
+            return lock_file
+        except (IOError, OSError):
+            lock_file.close()
+            return None
+    else:
+        # #21: Use O_NOFOLLOW to reject symlinks, O_CREAT|O_WRONLY with 0o600
+        try:
+            fd = os.open(
+                lock_path,
+                os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW,
+                0o600,
+            )
+        except OSError:
+            # Could fail if lock_path is a symlink (ELOOP) or other error
+            return None
+        lock_file = os.fdopen(fd, "w")
+        try:
             fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        lock_file.write(str(os.getpid()))
-        lock_file.flush()
+            lock_file.write(str(os.getpid()))
+            lock_file.flush()
 
-        def _release_lock():
-            try:
-                lock_file.close()
-                os.remove(lock_path)
-            except OSError:
-                pass
+            def _release_lock():
+                try:
+                    lock_file.close()
+                    os.remove(lock_path)
+                except OSError:
+                    pass
 
-        atexit.register(_release_lock)
-        return lock_file
-    except (IOError, OSError):
-        lock_file.close()
-        return None
+            atexit.register(_release_lock)
+            return lock_file
+        except (IOError, OSError):
+            lock_file.close()
+            return None
 
 
 def main():
@@ -770,6 +990,16 @@ def main():
             None, "tMUG",
             "System tray is not available on this system.\n"
             "tMUG requires a system tray to run."
+        )
+        sys.exit(1)
+
+    # #19: Ensure operator is set before launching the main window
+    if not _ensure_operator():
+        QMessageBox.critical(
+            None, "tMUG",
+            "Tailscale operator setup failed or was cancelled.\n\n"
+            "tMUG requires operator access to manage Tailscale.\n"
+            "You can retry by launching tMUG again."
         )
         sys.exit(1)
 

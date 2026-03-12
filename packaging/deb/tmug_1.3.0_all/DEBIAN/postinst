@@ -1,0 +1,5 @@
+#!/bin/bash
+set -e
+chmod +x /usr/local/bin/tMUG-tailscale-manager
+chmod +x /usr/local/bin/tMUG-tailscale-manager-qt
+update-desktop-database /usr/share/applications 2>/dev/null || true
