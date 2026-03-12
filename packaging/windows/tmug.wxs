@@ -5,23 +5,26 @@
        By DEC-LLC (Diwan Enterprise Consulting LLC)
        License: Apache-2.0
 
-       Build on Linux:  wixl -o tMUG-1.2.0-setup.msi tmug.wxs
-       Install on Win:  msiexec /i tMUG-1.2.0-setup.msi
-       Uninstall:       msiexec /x tMUG-1.2.0-setup.msi
+       Build on Linux:  wixl -o tMUG-1.3.0-setup.msi tmug.wxs
+       Install on Win:  msiexec /i tMUG-1.3.0-setup.msi
+       Uninstall:       msiexec /x tMUG-1.3.0-setup.msi
+
+       NOTE: The standalone .exe must be built with PyInstaller first.
+             See build-exe.sh or the GitHub Actions workflow.
   -->
 
   <Product Id="*"
            Name="tMUG - Tailscale Multi-platform User GUI"
            Language="1033"
-           Version="1.2.0.0"
+           Version="1.3.0.0"
            Manufacturer="DEC-LLC (Diwan Enterprise Consulting LLC)"
            UpgradeCode="7A3B9C4D-5E6F-4A8B-9C0D-1E2F3A4B5C6D">
 
     <Package InstallerVersion="200"
              Compressed="yes"
              InstallScope="perMachine"
-             Description="tMUG v1.2.0 — GUI for managing Tailscale VPN"
-             Comments="Requires Python 3 and PyQt5"
+             Description="tMUG v1.3.0 — GUI for managing Tailscale VPN"
+             Comments="Standalone application — no Python installation required"
              Manufacturer="DEC-LLC (Diwan Enterprise Consulting LLC)" />
 
     <MajorUpgrade DowngradeErrorMessage="A newer version of tMUG is already installed." />
@@ -34,13 +37,13 @@
         <Directory Id="INSTALLDIR" Name="tMUG">
 
           <Component Id="MainFiles" Guid="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
-            <File Id="TailscaleManagerPy"
-                  Name="tailscale_manager.py"
-                  Source="../../cross-platform/tailscale_manager.py"
+            <File Id="TailscaleManagerExe"
+                  Name="tMUG-tailscale-manager.exe"
+                  Source="dist/tMUG-tailscale-manager.exe"
                   KeyPath="yes" />
-            <File Id="LauncherBat"
-                  Name="tMUG-tailscale-manager.bat"
-                  Source="tMUG-tailscale-manager.bat" />
+            <File Id="IconFile"
+                  Name="tmug.ico"
+                  Source="tmug.ico" />
             <File Id="LicenseFile"
                   Name="LICENSE"
                   Source="../../LICENSE" />
@@ -59,8 +62,9 @@
             <Shortcut Id="StartMenuShortcut"
                       Name="tMUG"
                       Description="Tailscale Multi-platform User GUI"
-                      Target="[INSTALLDIR]tMUG-tailscale-manager.bat"
-                      WorkingDirectory="INSTALLDIR" />
+                      Target="[INSTALLDIR]tMUG-tailscale-manager.exe"
+                      WorkingDirectory="INSTALLDIR"
+                      Icon="tmug.ico" />
             <Shortcut Id="UninstallShortcut"
                       Name="Uninstall tMUG"
                       Target="[SystemFolder]msiexec.exe"
@@ -82,8 +86,9 @@
           <Shortcut Id="DesktopShortcutLink"
                     Name="tMUG"
                     Description="Tailscale Multi-platform User GUI"
-                    Target="[INSTALLDIR]tMUG-tailscale-manager.bat"
-                    WorkingDirectory="INSTALLDIR" />
+                    Target="[INSTALLDIR]tMUG-tailscale-manager.exe"
+                    WorkingDirectory="INSTALLDIR"
+                    Icon="tmug.ico" />
           <RegistryValue Root="HKCU"
                          Key="Software\DEC-LLC\tMUG"
                          Name="desktopshortcut"
@@ -93,6 +98,9 @@
         </Component>
       </Directory>
     </Directory>
+
+    <!-- Icon for shortcuts -->
+    <Icon Id="tmug.ico" SourceFile="tmug.ico" />
 
     <!-- Install all components -->
     <Feature Id="Complete" Title="tMUG" Level="1">

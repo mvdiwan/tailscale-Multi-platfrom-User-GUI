@@ -1,0 +1,43 @@
+name: Build Windows Installer
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install PyQt5 pyinstaller Pillow cairosvg
+
+      - name: Create icon
+        run: python packaging/windows/create-icon.py
+
+      - name: Build exe
+        run: |
+          pyinstaller --onefile --windowed --uac-admin `
+            --name tMUG-tailscale-manager `
+            --icon packaging/windows/tmug.ico `
+            --add-data "tmug.svg;." `
+            cross-platform/tailscale_manager.py
+
+      - name: Build Inno Setup installer
+        run: |
+          choco install innosetup -y --no-progress
+          Copy-Item dist/tMUG-tailscale-manager.exe packaging/windows/
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging/windows/tmug-setup.iss
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tMUG-windows
+          path: |
+            dist/tMUG-tailscale-manager.exe
+            packaging/windows/output/tMUG-*-setup.exe
