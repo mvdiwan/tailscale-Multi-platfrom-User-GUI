@@ -730,7 +730,7 @@ class MainWindow(QMainWindow):
                 else:
                     QMessageBox.critical(
                         self, "Tailscale",
-                        f"Failed to set exit node.\n\n{err or out}"
+                        f"Failed to set exit node.\n\n{_sanitize_output(err or out)}"
                     )
             elif dlg.action == "clear":
                 rc, out, err = _run(["set", "--exit-node="], privileged=True)
@@ -739,7 +739,7 @@ class MainWindow(QMainWindow):
                 else:
                     QMessageBox.critical(
                         self, "Tailscale",
-                        f"Failed to clear exit node.\n\n{err or out}"
+                        f"Failed to clear exit node.\n\n{_sanitize_output(err or out)}"
                     )
 
     def _on_settings(self):
@@ -826,29 +826,59 @@ def open_url(url):
 
 def acquire_single_instance():
     """Ensure only one instance of tMUG is running using a lock file.
-    Returns the lock file object (must stay open for the lifetime of the app)."""
+    Returns the lock file object (must stay open for the lifetime of the app).
+    Fix #21: use O_NOFOLLOW on Linux/macOS to prevent symlink attacks."""
     lock_path = os.path.join(tempfile.gettempdir(), ".tMUG-tailscale-manager.lock")
-    lock_file = open(lock_path, "w")
-    try:
-        if platform.system() == "Windows":
+
+    if platform.system() == "Windows":
+        # Windows does not support O_NOFOLLOW; use plain open + msvcrt locking
+        lock_file = open(lock_path, "w")
+        try:
             msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
+            lock_file.write(str(os.getpid()))
+            lock_file.flush()
+
+            def _release_lock():
+                try:
+                    lock_file.close()
+                    os.remove(lock_path)
+                except OSError:
+                    pass
+
+            atexit.register(_release_lock)
+            return lock_file
+        except (IOError, OSError):
+            lock_file.close()
+            return None
+    else:
+        # #21: Use O_NOFOLLOW to reject symlinks, O_CREAT|O_WRONLY with 0o600
+        try:
+            fd = os.open(
+                lock_path,
+                os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW,
+                0o600,
+            )
+        except OSError:
+            # Could fail if lock_path is a symlink (ELOOP) or other error
+            return None
+        lock_file = os.fdopen(fd, "w")
+        try:
             fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        lock_file.write(str(os.getpid()))
-        lock_file.flush()
+            lock_file.write(str(os.getpid()))
+            lock_file.flush()
 
-        def _release_lock():
-            try:
-                lock_file.close()
-                os.remove(lock_path)
-            except OSError:
-                pass
+            def _release_lock():
+                try:
+                    lock_file.close()
+                    os.remove(lock_path)
+                except OSError:
+                    pass
 
-        atexit.register(_release_lock)
-        return lock_file
-    except (IOError, OSError):
-        lock_file.close()
-        return None
+            atexit.register(_release_lock)
+            return lock_file
+        except (IOError, OSError):
+            lock_file.close()
+            return None
 
 
 def main():
