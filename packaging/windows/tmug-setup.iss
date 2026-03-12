@@ -34,8 +34,8 @@ WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-SetupIconFile=..\..\tailscale.svg
-UninstallDisplayIcon={app}\tailscale.svg
+SetupIconFile=..\..\tmug.svg
+UninstallDisplayIcon={app}\tmug.svg
 UninstallDisplayName={#MyAppName}
 VersionInfoVersion={#MyAppVersion}
 VersionInfoCompany={#MyAppPublisher}
@@ -51,15 +51,15 @@ WelcomeLabel2=This will install {#MyAppName} v{#MyAppVersion} on your computer.%
 [Files]
 Source: "..\..\cross-platform\tailscale_manager.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\cross-platform\setup.py"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\tailscale.svg"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\tmug.svg"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "tMUG-tailscale-manager.bat"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#MyAppShortName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\tailscale.svg"; Comment: "Launch tMUG Tailscale Manager"
+Name: "{group}\{#MyAppShortName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\tmug.svg"; Comment: "Launch tMUG Tailscale Manager"
 Name: "{group}\Uninstall {#MyAppShortName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppShortName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\tailscale.svg"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppShortName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\tmug.svg"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"

@@ -5,6 +5,7 @@ By DEC-LLC (Diwan Enterprise Consulting LLC)
 License: Apache-2.0
 """
 
+import atexit
 import json
 import os
 import platform
@@ -44,7 +45,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-VERSION = "1.0.0"
+VERSION = "1.2.0"
 AUTHOR = "DEC-LLC (Diwan Enterprise Consulting LLC)"
 LICENSE = "Apache-2.0"
 POLL_INTERVAL_MS = 10000  # 10 seconds
@@ -145,7 +146,7 @@ def _run_auth_command(args):
 
 
 # ---------------------------------------------------------------------------
-# Icon generation (3x3 dot grid, similar to tailscale.svg)
+# Icon generation (3x3 dot grid, similar to tmug.svg)
 # ---------------------------------------------------------------------------
 
 def _make_icon_pixmap(size=64, connected=None):
@@ -734,8 +735,18 @@ def acquire_single_instance():
             fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         lock_file.write(str(os.getpid()))
         lock_file.flush()
+
+        def _release_lock():
+            try:
+                lock_file.close()
+                os.remove(lock_path)
+            except OSError:
+                pass
+
+        atexit.register(_release_lock)
         return lock_file
     except (IOError, OSError):
+        lock_file.close()
         return None
 
 

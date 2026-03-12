@@ -79,7 +79,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-**Dependencies:** `yad`, `tailscale`, `pkexec`, `xdg-open`
+**Dependencies:** `yad`, `tailscale`, `sudo`, `xdg-open`
 
 Install YAD if you don't have it:
 ```bash
@@ -105,7 +105,7 @@ See [cross-platform/README.md](cross-platform/README.md) for platform-specific n
 ```bash
 sudo install -m 755 tMUG-tailscale-manager /usr/local/bin/tMUG-tailscale-manager
 sudo install -m 644 tMUG-tailscale-manager.desktop /usr/share/applications/tMUG-tailscale-manager.desktop
-sudo install -m 644 tailscale.svg /usr/share/pixmaps/tailscale.svg
+sudo install -m 644 tmug.svg /usr/share/pixmaps/tmug.svg
 sudo update-desktop-database /usr/share/applications/
 ```
 
@@ -185,7 +185,7 @@ You will need to re-authenticate (Login / Sign Up) to reconnect.
 tMUG
 ├── tMUG-tailscale-manager          # Bash + YAD version (Linux)
 ├── tMUG-tailscale-manager.desktop  # Desktop entry for app menus
-├── tailscale.svg                   # Application icon (generic mesh network)
+├── tmug.svg                        # Application icon (generic mesh network)
 ├── install.sh                      # Installer script
 ├── uninstall.sh                    # Uninstaller script
 ├── LICENSE                         # Apache 2.0 license
@@ -202,7 +202,7 @@ Both versions follow the same architecture:
 
 1. **CLI wrapper** — tMUG does not communicate with the Tailscale daemon directly. It invokes the `tailscale` CLI (`tailscale up`, `tailscale down`, `tailscale status`, etc.) and parses the output.
 
-2. **Privilege escalation** — commands that modify Tailscale state (connect, disconnect, settings) require root privileges. On Linux, tMUG uses `pkexec` (PolicyKit) which shows a graphical password prompt. On macOS/Windows, the user may need to run with administrator privileges.
+2. **Privilege escalation** — commands that modify Tailscale state (connect, disconnect, settings) require root privileges. On Linux, tMUG uses `sudo` for privilege escalation. On macOS/Windows, the user may need to run with administrator privileges.
 
 3. **Authentication flow** — when `tailscale up` or `tailscale login` outputs an authentication URL, tMUG captures it and opens it in the user's default browser via `xdg-open` (Linux), `open` (macOS), or `start` (Windows).
 
@@ -243,10 +243,10 @@ Both versions follow the same architecture:
 - Some settings require the Tailscale connection to be restarted. Try disconnecting and reconnecting.
 - Check the Tailscale admin console for any policy overrides (ACLs) that might be enforcing settings.
 
-### pkexec password prompt doesn't appear
+### sudo password prompt doesn't appear
 
-- Ensure a PolicyKit authentication agent is running. Most desktop environments include one.
-- If using a minimal window manager, install and run `lxpolkit`, `polkit-gnome-authentication-agent-1`, or `polkit-kde-authentication-agent-1`.
+- Ensure `sudo` is installed and the current user has sudo privileges.
+- If using passwordless sudo, the prompt will not appear (expected behavior).
 
 ### PyQt5 version: "System tray is not available"
 

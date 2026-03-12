@@ -6,7 +6,7 @@ echo "Removing tMUG..."
 
 sudo rm -f /usr/local/bin/tMUG-tailscale-manager
 sudo rm -f /usr/share/applications/tMUG-tailscale-manager.desktop
-sudo rm -f /usr/share/pixmaps/tailscale.svg
+sudo rm -f /usr/share/pixmaps/tmug.svg
 sudo update-desktop-database /usr/share/applications/ 2>/dev/null || true
 
 echo "Done! tMUG has been removed."

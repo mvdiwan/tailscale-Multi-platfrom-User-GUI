@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="tMUG",
-    version="1.0.0",
+    version="1.2.0",
     description="tMUG - Tailscale Multi-platform User GUI",
     author="DEC-LLC (Diwan Enterprise Consulting LLC)",
     license="Apache-2.0",
