@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tailscale Manager - Cross-platform GUI for managing Tailscale
+tMUG - Tailscale Multi-platform User GUI
 By DEC-LLC (Diwan Enterprise Consulting LLC)
 License: MIT
 """
@@ -345,7 +345,7 @@ class SettingsDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Tailscale Manager")
+        self.setWindowTitle("tMUG")
         self.setFixedSize(420, 350)
         self.setWindowIcon(make_icon())
 
@@ -583,8 +583,8 @@ class MainWindow(QMainWindow):
 
     def _on_about(self):
         QMessageBox.about(
-            self, "About Tailscale Manager",
-            f"<h3>Tailscale Manager v{VERSION}</h3>"
+            self, "About tMUG",
+            f"<h3>tMUG v{VERSION}</h3>"
             f"<p>by {AUTHOR}</p>"
             f"<p>License: {LICENSE}</p>"
             "<p>A cross-platform GUI for managing Tailscale VPN connections.</p>"
@@ -631,15 +631,15 @@ def _extract_auth_url(text):
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("Tailscale Manager")
+    app.setApplicationName("tMUG")
     app.setQuitOnLastWindowClosed(False)  # keep running in tray
     app.setWindowIcon(make_icon())
 
     if not QSystemTrayIcon.isSystemTrayAvailable():
         QMessageBox.critical(
-            None, "Tailscale Manager",
+            None, "tMUG",
             "System tray is not available on this system.\n"
-            "Tailscale Manager requires a system tray to run."
+            "tMUG requires a system tray to run."
         )
         sys.exit(1)
 

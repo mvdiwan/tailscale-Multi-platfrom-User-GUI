@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=Tailscale Manager
-Comment=Connect, disconnect, and configure Tailscale VPN
+Name=tMUG
+Comment=tMUG - Tailscale Multi-platform User GUI
 Exec=/usr/local/bin/tailscale-manager
 Icon=tailscale
 Terminal=false

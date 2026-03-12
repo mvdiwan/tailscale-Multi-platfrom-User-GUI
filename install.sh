@@ -4,7 +4,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "Installing Tailscale Manager..."
+echo "Installing tMUG (Tailscale Multi-platform User GUI)..."
 
 # Check dependencies
 for cmd in yad tailscale pkexec xdg-open; do
@@ -21,4 +21,4 @@ sudo install -m 644 "$SCRIPT_DIR/tailscale-manager.desktop" /usr/share/applicati
 sudo install -m 644 "$SCRIPT_DIR/tailscale.svg" /usr/share/pixmaps/tailscale.svg
 sudo update-desktop-database /usr/share/applications/ 2>/dev/null || true
 
-echo "Done! Tailscale Manager is now available in your application menu."
+echo "Done! tMUG is now available in your application menu."

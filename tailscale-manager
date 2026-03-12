@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Tailscale Manager - a simple GUI for managing Tailscale
+# tMUG - Tailscale Multi-platform User GUI
 # Uses yad for dialogs and system tray notification
 #
 # Version: 1.0.0
 # Author:  DEC-LLC (Diwan Enterprise Consulting LLC)
 # License: MIT
 
-APP_NAME="Tailscale Manager"
+APP_NAME="tMUG"
 APP_VERSION="1.0.0"
 APP_AUTHOR="DEC-LLC (Diwan Enterprise Consulting LLC)"
 APP_LICENSE="MIT"

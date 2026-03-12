@@ -1,4 +1,4 @@
-# Tailscale Manager
+# tMUG — Tailscale Multi-platform User GUI
 
 A lightweight GUI for managing [Tailscale](https://tailscale.com/) on desktop systems.
 
@@ -39,7 +39,7 @@ chmod +x install.sh
 
 A full cross-platform version using Python and PyQt5. Located in `cross-platform/`. Works on Linux, macOS, and Windows.
 
-**Dependencies:** Python 3.6+, PyQt5, Tailscale CLI
+**Dependencies:** Python 3.7+, PyQt5, Tailscale CLI
 
 ```bash
 cd cross-platform
@@ -52,8 +52,8 @@ See [cross-platform/README.md](cross-platform/README.md) for platform-specific d
 ## Installation (Bash version)
 
 ```bash
-git clone https://github.com/mvdiwan/tailscale-manager.git
-cd tailscale-manager
+git clone https://github.com/mvdiwan/tailscale-Multi-platfrom-User-GUI.git
+cd tailscale-Multi-platfrom-User-GUI
 chmod +x install.sh
 ./install.sh
 ```
@@ -76,7 +76,7 @@ chmod +x uninstall.sh
 
 ## Usage
 
-Launch "Tailscale Manager" from your application menu, or run:
+Launch "tMUG" from your application menu, or run:
 
 ```bash
 tailscale-manager

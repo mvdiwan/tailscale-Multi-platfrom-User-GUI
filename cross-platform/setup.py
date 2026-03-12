@@ -1,9 +1,9 @@
 from setuptools import setup
 
 setup(
-    name="tailscale-manager",
+    name="tMUG",
     version="1.0.0",
-    description="Cross-platform GUI for managing Tailscale VPN connections",
+    description="tMUG - Tailscale Multi-platform User GUI",
     author="DEC-LLC (Diwan Enterprise Consulting LLC)",
     license="MIT",
     py_modules=["tailscale_manager"],
@@ -12,7 +12,7 @@ setup(
     ],
     entry_points={
         "gui_scripts": [
-            "tailscale-manager=tailscale_manager:main",
+            "tmug=tailscale_manager:main",
         ],
     },
     python_requires=">=3.7",
