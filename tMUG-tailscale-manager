@@ -1,0 +1,410 @@
+#!/usr/bin/env bash
+# tMUG - Tailscale Multi-platform User GUI
+# Uses yad for dialogs and system tray notification
+#
+# Version: 1.0.0
+# Author:  DEC-LLC (Diwan Enterprise Consulting LLC)
+# License: MIT
+
+APP_NAME="tMUG"
+APP_VERSION="1.0.0"
+APP_AUTHOR="DEC-LLC (Diwan Enterprise Consulting LLC)"
+APP_LICENSE="MIT"
+ICON="/usr/share/pixmaps/tailscale.svg"
+TRAY_PIPE="/tmp/.tailscale-manager-tray-$$"
+TRAY_PID=""
+
+# Clean up on exit
+cleanup() {
+    if [ -n "$TRAY_PID" ] && kill -0 "$TRAY_PID" 2>/dev/null; then
+        kill "$TRAY_PID" 2>/dev/null
+        wait "$TRAY_PID" 2>/dev/null
+    fi
+    exec 3>&- 2>/dev/null
+    rm -f "$TRAY_PIPE"
+}
+trap cleanup EXIT
+
+show_error() {
+    yad --title="Tailscale" --image=dialog-error --text="$1" --button="OK:0" --center --width=350 2>/dev/null
+}
+
+show_info() {
+    yad --title="Tailscale" --image=dialog-information --text="$1" --button="OK:0" --center --width=400 2>/dev/null
+}
+
+ask_confirm() {
+    yad --title="Tailscale" --image=dialog-question --text="$1" --button="Yes:0" --button="No:1" --center --width=350 2>/dev/null
+}
+
+get_status() {
+    if tailscale status &>/dev/null; then
+        echo "connected"
+    else
+        echo "disconnected"
+    fi
+}
+
+get_ip() {
+    tailscale ip -4 2>/dev/null
+}
+
+get_tray_tooltip() {
+    local st
+    st=$(get_status)
+    if [ "$st" = "connected" ]; then
+        local ip
+        ip=$(get_ip)
+        echo "Tailscale: Connected (${ip:-N/A})"
+    else
+        echo "Tailscale: Disconnected"
+    fi
+}
+
+update_tray_tooltip() {
+    local tooltip
+    tooltip=$(get_tray_tooltip)
+    if [ -p "$TRAY_PIPE" ]; then
+        echo "tooltip:$tooltip" >&3 2>/dev/null
+    fi
+}
+
+get_status_text() {
+    local status
+    status=$(tailscale status 2>&1)
+    local ip
+    ip=$(get_ip)
+    local hostname
+    hostname=$(tailscale status --self --json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('Self',{}).get('HostName','unknown'))" 2>/dev/null)
+
+    if [ "$(get_status)" = "connected" ]; then
+        echo "Status: <b>Connected</b>\nIP: <b>${ip:-N/A}</b>\nHostname: <b>${hostname:-N/A}</b>\n\n<b>Peers:</b>\n${status}"
+    else
+        echo "Status: <b>Disconnected</b>"
+    fi
+}
+
+do_connect() {
+    local output
+    output=$(pkexec tailscale up 2>&1)
+    local rc=$?
+
+    if [ $rc -eq 0 ] && [ "$(get_status)" = "connected" ]; then
+        show_info "Successfully connected to Tailscale!\n\nIP: $(get_ip)"
+    else
+        local url
+        url=$(echo "$output" | grep -oP 'https://login\.tailscale\.com/\S+')
+        if [ -n "$url" ]; then
+            xdg-open "$url" 2>/dev/null &
+            show_info "A browser window has been opened for authentication.\n\nOnce you log in and authorize this device, it will connect automatically.\n\nIf the browser didn't open, visit:\n<tt>$url</tt>"
+        else
+            show_error "Failed to connect.\n\n$output"
+        fi
+    fi
+    update_tray_tooltip
+}
+
+do_login() {
+    local output
+    output=$(pkexec tailscale login 2>&1)
+    local rc=$?
+
+    local url
+    url=$(echo "$output" | grep -oP 'https://login\.tailscale\.com/\S+')
+
+    if [ -n "$url" ]; then
+        xdg-open "$url" 2>/dev/null &
+        show_info "A browser window has been opened to log in to Tailscale.\n\nYou can:\n  - Sign up for a new account\n  - Log in to an existing account\n  - Add this device to your tailnet\n\nIf the browser didn't open, visit:\n<tt>$url</tt>"
+    elif [ $rc -eq 0 ]; then
+        show_info "Already logged in and authenticated."
+    else
+        show_error "Login failed.\n\n$output"
+    fi
+    update_tray_tooltip
+}
+
+do_logout() {
+    if ask_confirm "Log out from Tailscale?\n\nThis will disconnect and expire your node key.\nYou will need to re-authenticate to reconnect."; then
+        pkexec tailscale logout 2>/dev/null
+        show_info "Logged out from Tailscale."
+    fi
+    update_tray_tooltip
+}
+
+do_disconnect() {
+    if ask_confirm "Disconnect from Tailscale?"; then
+        pkexec tailscale down 2>/dev/null
+        show_info "Disconnected from Tailscale."
+    fi
+    update_tray_tooltip
+}
+
+do_exit_node_menu() {
+    local nodes
+    nodes=$(tailscale exit-node list 2>/dev/null | tail -n +2 | grep -v "^$" | awk '{print $1" "$2}')
+
+    if [ -z "$nodes" ]; then
+        show_info "No exit nodes available."
+        return
+    fi
+
+    local choice
+    choice=$(echo "$nodes" | yad --title="Tailscale - Exit Nodes" --list \
+        --column="IP" --column="Name" \
+        --text="Select an exit node (or cancel for none):" \
+        --center --width=500 --height=400 \
+        --button="Use Selected:0" --button="Clear Exit Node:2" --button="Cancel:1" 2>/dev/null)
+    local ret=$?
+
+    case $ret in
+        0)
+            local selected_ip
+            selected_ip=$(echo "$choice" | cut -d'|' -f1)
+            if [ -n "$selected_ip" ]; then
+                pkexec tailscale set --exit-node="$selected_ip" 2>/dev/null
+                show_info "Exit node set to: $selected_ip"
+            fi
+            ;;
+        2)
+            pkexec tailscale set --exit-node="" 2>/dev/null
+            show_info "Exit node cleared."
+            ;;
+    esac
+}
+
+do_settings() {
+    local current_dns current_routes current_ssh
+    current_dns=$(tailscale debug prefs 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('CorpDNS', True))" 2>/dev/null)
+    current_routes=$(tailscale debug prefs 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('RouteAll', False))" 2>/dev/null)
+    current_ssh=$(tailscale debug prefs 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('RunSSH', False))" 2>/dev/null)
+
+    local dns_flag="" routes_flag="" ssh_flag=""
+    [ "$current_dns" = "True" ] && dns_flag="TRUE" || dns_flag="FALSE"
+    [ "$current_routes" = "True" ] && routes_flag="TRUE" || routes_flag="FALSE"
+    [ "$current_ssh" = "True" ] && ssh_flag="TRUE" || ssh_flag="FALSE"
+
+    local result
+    result=$(yad --title="Tailscale - Settings" --form --center --width=400 \
+        --field="Accept DNS:CHK" "$dns_flag" \
+        --field="Accept Routes:CHK" "$routes_flag" \
+        --field="Enable SSH:CHK" "$ssh_flag" \
+        --field="Advertise as Exit Node:CHK" "FALSE" \
+        --button="Apply:0" --button="Cancel:1" 2>/dev/null)
+    local ret=$?
+
+    if [ $ret -eq 0 ] && [ -n "$result" ]; then
+        local set_dns set_routes set_ssh set_exit
+        set_dns=$(echo "$result" | cut -d'|' -f1)
+        set_routes=$(echo "$result" | cut -d'|' -f2)
+        set_ssh=$(echo "$result" | cut -d'|' -f3)
+        set_exit=$(echo "$result" | cut -d'|' -f4)
+
+        local cmd="tailscale set"
+        [ "$set_dns" = "TRUE" ] && cmd="$cmd --accept-dns=true" || cmd="$cmd --accept-dns=false"
+        [ "$set_routes" = "TRUE" ] && cmd="$cmd --accept-routes=true" || cmd="$cmd --accept-routes=false"
+        [ "$set_ssh" = "TRUE" ] && cmd="$cmd --ssh=true" || cmd="$cmd --ssh=false"
+        [ "$set_exit" = "TRUE" ] && cmd="$cmd --advertise-exit-node" || cmd="$cmd --advertise-exit-node=false"
+
+        pkexec $cmd 2>/dev/null
+        show_info "Settings applied."
+    fi
+}
+
+do_about() {
+    yad --title="About $APP_NAME" --center --width=420 --height=300 \
+        --window-icon="$ICON" --image="$ICON" \
+        --text="\n<b>$APP_NAME</b>\nVersion $APP_VERSION\n\nA simple graphical manager for Tailscale VPN.\nConnect, disconnect, manage exit nodes, and\nconfigure settings with a friendly desktop GUI.\n\n<b>Author:</b> $APP_AUTHOR\n<b>License:</b> $APP_LICENSE\n" \
+        --button="OK:0" 2>/dev/null
+}
+
+# --- System Tray ---
+
+start_tray() {
+    # Kill any existing tray process
+    if [ -n "$TRAY_PID" ] && kill -0 "$TRAY_PID" 2>/dev/null; then
+        kill "$TRAY_PID" 2>/dev/null
+        wait "$TRAY_PID" 2>/dev/null
+    fi
+    exec 3>&- 2>/dev/null
+    rm -f "$TRAY_PIPE"
+
+    mkfifo "$TRAY_PIPE"
+
+    local tooltip
+    tooltip=$(get_tray_tooltip)
+
+    local conn_label
+    if [ "$(get_status)" = "connected" ]; then
+        conn_label="Disconnect"
+    else
+        conn_label="Connect"
+    fi
+
+    # Open fd 3 read-write on the pipe so yad --listen keeps running
+    exec 3<>"$TRAY_PIPE"
+
+    yad --notification \
+        --listen \
+        --image="$ICON" \
+        --text="$tooltip" \
+        --command="echo OPEN" \
+        --menu="Open Manager!OPEN|$conn_label!TOGGLE|Status!STATUS|Quit!QUIT" \
+        --no-middle \
+        <&3 &
+    TRAY_PID=$!
+}
+
+# --- Main Window ---
+
+show_main_window() {
+    while true; do
+        local_status=$(get_status)
+
+        if [ "$local_status" = "connected" ]; then
+            connect_label="Disconnect"
+            status_icon="network-transmit-receive"
+            status_line="Status: <b>Connected</b> ($(get_ip))"
+        else
+            connect_label="Connect"
+            status_icon="network-offline"
+            status_line="Status: <b>Disconnected</b>"
+        fi
+
+        if [ "$local_status" = "connected" ]; then
+            auth_label="Logout"
+        else
+            auth_label="Login / Sign Up"
+        fi
+
+        choice=$(yad --title="$APP_NAME" --center --width=500 --window-icon="$ICON" \
+            --image="$status_icon" \
+            --text="\n$status_line\n" \
+            --form \
+            --button="$connect_label:2" \
+            --button="$auth_label:6" \
+            --button="Status:3" \
+            --button="Exit Node:4" \
+            --button="Settings:5" \
+            --button="About:7" \
+            --button="Close:1" \
+            2>/dev/null)
+        ret=$?
+
+        case $ret in
+            2)
+                if [ "$local_status" = "connected" ]; then
+                    do_disconnect
+                else
+                    do_connect
+                fi
+                # Restart tray to update connect/disconnect menu label
+                start_tray
+                ;;
+            3)
+                status_text=$(get_status_text)
+                yad --title="Tailscale Status" --text="$status_text" --center --width=600 --height=400 \
+                    --button="OK:0" --fontname="Monospace 10" 2>/dev/null
+                ;;
+            4)
+                do_exit_node_menu
+                ;;
+            5)
+                do_settings
+                ;;
+            6)
+                if [ "$local_status" = "connected" ]; then
+                    do_logout
+                else
+                    do_login
+                fi
+                # Restart tray to update connect/disconnect menu label
+                start_tray
+                ;;
+            7)
+                do_about
+                ;;
+            *)
+                # "Close" or window-close: minimize to tray, do NOT exit
+                update_tray_tooltip
+                return
+                ;;
+        esac
+    done
+}
+
+# --- Main Entry Point ---
+
+# Start the system tray icon
+start_tray
+
+# Show the main window on first launch
+show_main_window
+
+# After the main window closes, enter the tray event loop.
+# yad --notification writes the menu-action string to stdout when clicked.
+# We capture that by re-launching the tray with stdout going to a read loop.
+while true; do
+    # Restart the tray so we can capture its stdout for menu actions
+    if [ -n "$TRAY_PID" ] && kill -0 "$TRAY_PID" 2>/dev/null; then
+        kill "$TRAY_PID" 2>/dev/null
+        wait "$TRAY_PID" 2>/dev/null
+    fi
+    exec 3>&- 2>/dev/null
+    rm -f "$TRAY_PIPE"
+    mkfifo "$TRAY_PIPE"
+
+    local_tooltip=$(get_tray_tooltip)
+
+    if [ "$(get_status)" = "connected" ]; then
+        conn_menu_label="Disconnect"
+    else
+        conn_menu_label="Connect"
+    fi
+
+    exec 3<>"$TRAY_PIPE"
+
+    # This time, capture stdout from yad into a pipe we can read
+    RESPONSE_PIPE="/tmp/.tailscale-manager-resp-$$"
+    rm -f "$RESPONSE_PIPE"
+    mkfifo "$RESPONSE_PIPE"
+
+    yad --notification \
+        --listen \
+        --image="$ICON" \
+        --text="$local_tooltip" \
+        --command="echo OPEN" \
+        --menu="Open Manager!OPEN|$conn_menu_label!TOGGLE|Status!STATUS|Quit!QUIT" \
+        --no-middle \
+        <&3 >"$RESPONSE_PIPE" &
+    TRAY_PID=$!
+
+    # Block until an action is received from the tray
+    action=""
+    read -r action < "$RESPONSE_PIPE"
+    rm -f "$RESPONSE_PIPE"
+
+    case "$action" in
+        OPEN)
+            show_main_window
+            ;;
+        TOGGLE)
+            if [ "$(get_status)" = "connected" ]; then
+                do_disconnect
+            else
+                do_connect
+            fi
+            ;;
+        STATUS)
+            status_text=$(get_status_text)
+            yad --title="Tailscale Status" --text="$status_text" --center --width=600 --height=400 \
+                --button="OK:0" --fontname="Monospace 10" 2>/dev/null
+            ;;
+        QUIT)
+            cleanup
+            exit 0
+            ;;
+        *)
+            # Tray process exited unexpectedly (e.g. killed), just restart
+            ;;
+    esac
+done
