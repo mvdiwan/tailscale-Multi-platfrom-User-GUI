@@ -2,7 +2,7 @@
 
 A cross-platform GUI for managing Tailscale VPN connections, built with Python and PyQt5.
 
-By DEC-LLC (Diwan Enterprise Consulting LLC) | MIT License
+By DEC-LLC (Diwan Enterprise Consulting LLC) | Apache 2.0 License
 
 ## Requirements
 

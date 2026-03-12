@@ -2,7 +2,7 @@
 """
 tMUG - Tailscale Multi-platform User GUI
 By DEC-LLC (Diwan Enterprise Consulting LLC)
-License: MIT
+License: Apache-2.0
 """
 
 import json
@@ -38,7 +38,7 @@ from PyQt5.QtWidgets import (
 
 VERSION = "1.0.0"
 AUTHOR = "DEC-LLC (Diwan Enterprise Consulting LLC)"
-LICENSE = "MIT"
+LICENSE = "Apache-2.0"
 POLL_INTERVAL_MS = 10000  # 10 seconds
 
 

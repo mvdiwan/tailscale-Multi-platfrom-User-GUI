@@ -4,12 +4,12 @@
 #
 # Version: 1.0.0
 # Author:  DEC-LLC (Diwan Enterprise Consulting LLC)
-# License: MIT
+# License: Apache-2.0
 
 APP_NAME="tMUG"
 APP_VERSION="1.0.0"
 APP_AUTHOR="DEC-LLC (Diwan Enterprise Consulting LLC)"
-APP_LICENSE="MIT"
+APP_LICENSE="Apache-2.0"
 ICON="/usr/share/pixmaps/tailscale.svg"
 TRAY_PIPE="/tmp/.tailscale-manager-tray-$$"
 TRAY_PID=""
