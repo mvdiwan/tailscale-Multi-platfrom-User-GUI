@@ -5,7 +5,6 @@ By DEC-LLC (Diwan Enterprise Consulting LLC)
 License: Apache-2.0
 """
 
-import fcntl
 import json
 import os
 import platform
@@ -13,7 +12,13 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import webbrowser
+
+if platform.system() != "Windows":
+    import fcntl
+else:
+    import msvcrt
 
 from PyQt5.QtCore import Qt, QTimer, QSize
 from PyQt5.QtGui import QColor, QIcon, QPainter, QPixmap
@@ -66,12 +71,12 @@ def _tailscale_cmd():
 def _run(args, privileged=False, timeout=30):
     """Run a tailscale CLI command and return (returncode, stdout, stderr).
 
-    On Linux privileged commands are wrapped with pkexec.
+    On Linux privileged commands are wrapped with sudo.
     On other platforms the caller is expected to run as admin if needed.
     """
     cmd = [_tailscale_cmd()] + args
     if privileged and _system() == "Linux":
-        cmd = ["pkexec"] + cmd
+        cmd = ["sudo"] + cmd
 
     try:
         proc = subprocess.run(
@@ -87,6 +92,56 @@ def _run(args, privileged=False, timeout=30):
         return -1, "", "Command timed out."
     except Exception as e:
         return -1, "", str(e)
+
+
+def _run_auth_command(args):
+    """Run a tailscale command that may block for authentication.
+
+    Runs the command in the background, polls for an auth URL in the output,
+    and returns (url_or_none, full_output, process).
+    """
+    cmd = [_tailscale_cmd()] + args
+    if _system() == "Linux":
+        cmd = ["sudo"] + cmd
+
+    tmpfile = tempfile.NamedTemporaryFile(
+        mode="w+", prefix="tmug-auth-", suffix=".txt", delete=False
+    )
+    tmpfile.close()
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=open(tmpfile.name, "w"),
+            stderr=subprocess.STDOUT,
+        )
+
+        # Poll for up to 15 seconds for a URL to appear
+        url = None
+        for _ in range(30):
+            try:
+                with open(tmpfile.name, "r") as f:
+                    content = f.read()
+                url = _extract_auth_url(content)
+                if url:
+                    break
+            except Exception:
+                pass
+            if proc.poll() is not None:
+                break
+            time.sleep(0.5)
+
+        with open(tmpfile.name, "r") as f:
+            output = f.read()
+
+        return url, output, proc
+    except Exception as e:
+        return None, str(e), None
+    finally:
+        try:
+            os.unlink(tmpfile.name)
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -466,31 +521,37 @@ class MainWindow(QMainWindow):
             self._do_connect()
 
     def _do_connect(self):
-        rc, out, err = _run(["up"], privileged=True, timeout=60)
-        combined = out + err
+        if is_connected():
+            ip = get_ip()
+            QMessageBox.information(
+                self, "Tailscale",
+                f"Already connected to Tailscale!\n\nIP: {ip or 'N/A'}"
+            )
+            self._poll_status()
+            return
 
-        if rc == 0 and is_connected():
+        url, output, proc = _run_auth_command(["up"])
+
+        if is_connected():
             ip = get_ip()
             QMessageBox.information(
                 self, "Tailscale",
                 f"Successfully connected to Tailscale!\n\nIP: {ip or 'N/A'}"
             )
+        elif url:
+            open_url(url)
+            QMessageBox.information(
+                self, "Tailscale",
+                "A browser window has been opened for authentication.\n\n"
+                "Once you log in and authorize this device, it will connect "
+                "automatically.\n\n"
+                f"If the browser didn't open, visit:\n{url}"
+            )
         else:
-            url = _extract_auth_url(combined)
-            if url:
-                open_url(url)
-                QMessageBox.information(
-                    self, "Tailscale",
-                    "A browser window has been opened for authentication.\n\n"
-                    "Once you log in and authorize this device, it will connect "
-                    "automatically.\n\n"
-                    f"If the browser didn't open, visit:\n{url}"
-                )
-            else:
-                QMessageBox.critical(
-                    self, "Tailscale",
-                    f"Failed to connect.\n\n{combined}"
-                )
+            QMessageBox.critical(
+                self, "Tailscale",
+                f"Failed to connect.\n\n{output}"
+            )
         self._poll_status()
 
     def _do_disconnect(self):
@@ -513,11 +574,10 @@ class MainWindow(QMainWindow):
             self._do_login()
 
     def _do_login(self):
-        rc, out, err = _run(["login"], privileged=True, timeout=60)
-        combined = out + err
-        url = _extract_auth_url(combined)
+        url, output, proc = _run_auth_command(["login"])
+
         if url:
-            webbrowser.open(url)
+            open_url(url)
             QMessageBox.information(
                 self, "Tailscale",
                 "A browser window has been opened to log in to Tailscale.\n\n"
@@ -527,10 +587,10 @@ class MainWindow(QMainWindow):
                 "  - Add this device to your tailnet\n\n"
                 f"If the browser didn't open, visit:\n{url}"
             )
-        elif rc == 0:
+        elif is_connected():
             QMessageBox.information(self, "Tailscale", "Already logged in and authenticated.")
         else:
-            QMessageBox.critical(self, "Tailscale", f"Login failed.\n\n{combined}")
+            QMessageBox.critical(self, "Tailscale", f"Login failed.\n\n{output}")
         self._poll_status()
 
     def _do_logout(self):
@@ -629,19 +689,19 @@ def _extract_auth_url(text):
 
 
 def open_url(url):
-    """Open a URL in the default browser, with fallbacks for when
-    xdg-open fails silently (e.g. browser already running in some DEs)."""
+    """Open a URL in the default browser, with fallbacks."""
     system = platform.system()
     try:
         if system == "Linux":
-            # Try xdg-open first
-            subprocess.Popen(["xdg-open", url],
-                             stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
-            # Also try direct browser invocation as fallback
-            # xdg-open can silently fail to open new tabs in running browsers
-            import time
-            time.sleep(0.5)
+            # Try xdg-open first; only fall back to direct browser if unavailable
+            try:
+                subprocess.Popen(["xdg-open", url],
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+                return
+            except FileNotFoundError:
+                pass
+            # xdg-open not available — try direct browser invocation
             for browser in ["firefox", "google-chrome", "chromium-browser", "brave-browser"]:
                 try:
                     subprocess.Popen([browser, url],
@@ -650,6 +710,8 @@ def open_url(url):
                     return
                 except FileNotFoundError:
                     continue
+            # Last resort
+            webbrowser.open(url)
         else:
             webbrowser.open(url)
     except Exception:
@@ -666,7 +728,10 @@ def acquire_single_instance():
     lock_path = os.path.join(tempfile.gettempdir(), ".tMUG-tailscale-manager.lock")
     lock_file = open(lock_path, "w")
     try:
-        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if platform.system() == "Windows":
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         lock_file.write(str(os.getpid()))
         lock_file.flush()
         return lock_file
