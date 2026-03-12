@@ -39,6 +39,7 @@ cleanup() {
     fi
     exec 3>&- 2>/dev/null
     rm -f "$TRAY_PIPE"
+    rm -f "/tmp/.tailscale-manager-resp-$$"
     # Release lock
     exec 9>&-
     rm -f "$LOCKFILE"
@@ -59,23 +60,17 @@ ask_confirm() {
 
 open_url() {
     local url="$1"
-    # Try multiple methods to open URL — xdg-open can fail silently
-    # when a browser is already running in some DEs
+    # Try xdg-open first; fall back to direct browser invocation
     if command -v xdg-open &>/dev/null; then
-        open_url "$url"
-        sleep 1
-    fi
-    # Verify a browser was actually launched; if not, try direct invocations
-    if ! pgrep -f "$url" &>/dev/null; then
-        if command -v firefox &>/dev/null; then
-            firefox "$url" 2>/dev/null &
-        elif command -v google-chrome &>/dev/null; then
-            google-chrome "$url" 2>/dev/null &
-        elif command -v chromium-browser &>/dev/null; then
-            chromium-browser "$url" 2>/dev/null &
-        elif command -v brave-browser &>/dev/null; then
-            brave-browser "$url" 2>/dev/null &
-        fi
+        xdg-open "$url" 2>/dev/null &
+    elif command -v firefox &>/dev/null; then
+        firefox "$url" 2>/dev/null &
+    elif command -v google-chrome &>/dev/null; then
+        google-chrome "$url" 2>/dev/null &
+    elif command -v chromium-browser &>/dev/null; then
+        chromium-browser "$url" 2>/dev/null &
+    elif command -v brave-browser &>/dev/null; then
+        brave-browser "$url" 2>/dev/null &
     fi
 }
 
