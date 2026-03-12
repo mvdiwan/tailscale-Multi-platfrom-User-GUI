@@ -6,10 +6,12 @@ License: Apache-2.0
 """
 
 import atexit
+import getpass
 import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -45,7 +47,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 AUTHOR = "DEC-LLC (Diwan Enterprise Consulting LLC)"
 LICENSE = "Apache-2.0"
 POLL_INTERVAL_MS = 10000  # 10 seconds
@@ -94,15 +96,104 @@ def _tailscale_cmd():
     return "tailscale"
 
 
-def _run(args, privileged=False, timeout=30):
-    """Run a tailscale CLI command and return (returncode, stdout, stderr).
+# ---------------------------------------------------------------------------
+# Operator setup (#19)
+# ---------------------------------------------------------------------------
 
-    On Linux privileged commands are wrapped with sudo.
-    On other platforms the caller is expected to run as admin if needed.
+def _ensure_operator():
+    """Ensure the current user is set as the Tailscale operator.
+
+    If the operator is not yet set, prompt for admin credentials once via the
+    platform-appropriate elevation mechanism (pkexec/sudo on Linux, osascript
+    on macOS, ShellExecuteW on Windows).
+
+    Returns True if the operator is (now) set, False on failure.
     """
+    username = getpass.getuser()
+    ts = _tailscale_cmd()
+    system = _system()
+
+    # Check current operator via `tailscale debug prefs`
+    try:
+        proc = subprocess.run(
+            [ts, "debug", "prefs"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            prefs = json.loads(proc.stdout)
+            if prefs.get("OperatorUser") == username:
+                return True
+    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
+        pass
+
+    # Operator not set -- ask the user
+    reply = QMessageBox.question(
+        None,
+        "tMUG - One-time Setup",
+        f"tMUG needs to register <b>{username}</b> as the Tailscale operator "
+        "so it can manage connections without requiring admin privileges "
+        "every time.\n\n"
+        "This is a one-time setup that requires administrator access.\n\n"
+        "Proceed?",
+        QMessageBox.Yes | QMessageBox.No,
+    )
+    if reply != QMessageBox.Yes:
+        return False
+
+    set_cmd = [ts, "set", f"--operator={username}"]
+
+    if system == "Linux":
+        # Prefer pkexec; fall back to a terminal with sudo
+        if shutil.which("pkexec"):
+            rc = subprocess.call(["pkexec"] + set_cmd)
+        else:
+            # Open a terminal so the user can enter their password
+            term = shutil.which("x-terminal-emulator") or shutil.which("xterm")
+            if term:
+                rc = subprocess.call(
+                    [term, "-e", f"sudo {' '.join(set_cmd)}"]
+                )
+            else:
+                rc = subprocess.call(["sudo"] + set_cmd)
+    elif system == "Darwin":
+        shell_cmd = subprocess.list2cmdline(set_cmd)
+        script = f'do shell script "{shell_cmd}" with administrator privileges'
+        rc = subprocess.call(["osascript", "-e", script])
+    elif system == "Windows":
+        import ctypes
+        # ShellExecuteW returns >32 on success
+        ret = ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", set_cmd[0],
+            " ".join(set_cmd[1:]), None, 1,
+        )
+        rc = 0 if ret > 32 else 1
+    else:
+        rc = subprocess.call(set_cmd)
+
+    if rc != 0:
+        return False
+
+    # Verify operator was set
+    try:
+        proc = subprocess.run(
+            [ts, "debug", "prefs"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            prefs = json.loads(proc.stdout)
+            return prefs.get("OperatorUser") == username
+    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
+        pass
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Command runners (no privilege escalation -- relies on operator flag)
+# ---------------------------------------------------------------------------
+
+def _run(args, timeout=30):
+    """Run a tailscale CLI command and return (returncode, stdout, stderr)."""
     cmd = [_tailscale_cmd()] + args
-    if privileged and _system() == "Linux":
-        cmd = ["sudo"] + cmd
 
     try:
         proc = subprocess.run(
@@ -128,8 +219,6 @@ def _run_auth_command(args):
     Fixes #8, #18, #24: secure temp file, proper handle/process cleanup, timeout.
     """
     cmd = [_tailscale_cmd()] + args
-    if _system() == "Linux":
-        cmd = ["sudo"] + cmd
 
     # #18: Create temp file with restrictive permissions (0o600) to avoid
     # leaking auth URLs to other users on the system.
@@ -467,7 +556,7 @@ class SettingsDialog(QDialog):
         else:
             args.append("--advertise-exit-node=false")
 
-        rc, out, err = _run(args, privileged=True)
+        rc, out, err = _run(args)
         if rc == 0:
             QMessageBox.information(self, "Tailscale", "Settings applied.")
             self.accept()
@@ -653,7 +742,7 @@ class MainWindow(QMainWindow):
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
-            rc, out, err = _run(["down"], privileged=True)
+            rc, out, err = _run(["down"])
             if rc == 0:
                 QMessageBox.information(self, "Tailscale", "Disconnected from Tailscale.")
             else:
@@ -701,7 +790,7 @@ class MainWindow(QMainWindow):
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
-            rc, out, err = _run(["logout"], privileged=True)
+            rc, out, err = _run(["logout"])
             if rc == 0:
                 QMessageBox.information(self, "Tailscale", "Logged out from Tailscale.")
             else:
@@ -720,7 +809,7 @@ class MainWindow(QMainWindow):
         if dlg.exec_() == QDialog.Accepted:
             if dlg.action == "set" and dlg.selected_ip:
                 rc, out, err = _run(
-                    ["set", f"--exit-node={dlg.selected_ip}"], privileged=True
+                    ["set", f"--exit-node={dlg.selected_ip}"]
                 )
                 if rc == 0:
                     QMessageBox.information(
@@ -733,7 +822,7 @@ class MainWindow(QMainWindow):
                         f"Failed to set exit node.\n\n{_sanitize_output(err or out)}"
                     )
             elif dlg.action == "clear":
-                rc, out, err = _run(["set", "--exit-node="], privileged=True)
+                rc, out, err = _run(["set", "--exit-node="])
                 if rc == 0:
                     QMessageBox.information(self, "Tailscale", "Exit node cleared.")
                 else:
@@ -803,7 +892,7 @@ def open_url(url):
                 return
             except FileNotFoundError:
                 pass
-            # xdg-open not available — try direct browser invocation
+            # xdg-open not available -- try direct browser invocation
             for browser in ["firefox", "google-chrome", "chromium-browser", "brave-browser"]:
                 try:
                     subprocess.Popen([browser, url],
@@ -901,6 +990,16 @@ def main():
             None, "tMUG",
             "System tray is not available on this system.\n"
             "tMUG requires a system tray to run."
+        )
+        sys.exit(1)
+
+    # #19: Ensure operator is set before launching the main window
+    if not _ensure_operator():
+        QMessageBox.critical(
+            None, "tMUG",
+            "Tailscale operator setup failed or was cancelled.\n\n"
+            "tMUG requires operator access to manage Tailscale.\n"
+            "You can retry by launching tMUG again."
         )
         sys.exit(1)
 
